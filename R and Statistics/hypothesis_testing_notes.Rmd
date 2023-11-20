@@ -1,0 +1,1323 @@
+---
+title: "Hypothesis testing"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+---
+
+\
+
+
+# Review & an experiment
+
+**Where are we?**    
+
+- we can use *sample* data to estimate features of the population
+
+- there's *error* in this estimation
+
+- it's important to *inspect* and *communicate* the level of potential error 
+
+- we need to take the potential error into account when making *inferences* about the broader population
+
+
+
+\
+\
+
+
+
+**Data story**
+
+Consider data on wages:
+
+```{r message = FALSE, warning = FALSE}
+# Load packages
+library(ggplot2)
+library(dplyr)
+library(mosaic)
+library(tidymodels)
+
+# Set a more color-blind friendly palette for ggplot
+palette(c("#000000", "#56B4E9", "#E69F00", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7"))
+scale_colour_discrete <- function(...) scale_colour_manual(values = palette())
+scale_fill_discrete <- function(...) scale_fill_manual(values = palette())
+```
+
+
+```{r message = FALSE, warning = FALSE}
+# Load the data
+CPS_2018 <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/CPS_2018.csv")
+```
+
+
+
+
+
+Let's use this sample data to make *inferences* about the *population* model of wages by age:  
+    
+$$\text{wage} = \beta_0 + \beta_1 \text{ age}$$
+
+Let's *estimate* the wage model using our sample data:
+
+```{r}
+# Specify our modeling method
+lm_spec <- 
+  linear_reg() %>% 
+  set_mode("regression") %>% 
+  set_engine("lm") 
+
+# Estimate the model
+wage_model_1 <- lm_spec %>% 
+  fit(wage ~ age, data = CPS_2018)
+```
+
+\
+\
+\
+\
+
+
+**EXAMPLE 0**
+
+Check out our model summary below. Using *our* sample of adults, we **estimate** that the typical wage increases by $548.79 for every 1 year increase in age. Report and interpret the (estimated) standard error for this estimate.
+
+47.89 std error coefficient = expected error in our estimate. I expect our estimate of the wage coeff to be off by roughly $47.89 per year.
+
+```{r}
+wage_model_1 %>% 
+  tidy()
+
+# Plot the model
+ggplot(CPS_2018, aes(x = age, y = wage)) + 
+  geom_smooth(method = "lm")
+```
+
+
+\
+\
+
+
+
+
+**EXAMPLE 1**    
+
+a. Use our *estimate* of the age coefficient (548.7934) and its *standard error* (47.89052) to approximate a 95% confidence interval for the "true" population age coefficient. Check your answer using `confint()`.
+
+```{r}
+# Rough approximation
+548.7924-2*47.89052
+548.7924+2*47.89052
+#95% fall within 2 std deviations.
+```
+
+```{r}
+# More accurately
+wage_model_1 %>% 
+  pluck("fit") %>% 
+  confint()
+```
+
+
+
+b. How can we interpret the 95% CI for the age coefficient?    
+    i. There's a *95% chance* that, in the *broader labor force*, the average wage increases somewhere between $454.92 and $642.67 for every 1 year increase in age. INCORRECT: It's not a chance. The probability is either 0 or 1. In "frequentist" statistics, our measures of uncertainty relate to our sample data, NOT the population (which is fixed). For 95% of our possible SAMPLES, the CI method wil work.
+    ii. We're *95% confident* that, in the *broader labor force*, the average wage increases somewhere between $454.92 and $642.67 for every 1 year increase in age.
+    iii. We're *95% confident* that, in our *sample*, the average wage increases somewhere between $454.92 and $642.67 for every 1 year increase in age. INCORRECT: We're making inferences about the population. We KNOW what's happening in our sample.
+    
+ii is right.
+
+
+c. Suppose we instead calculated a 99.999% confidence interval. What would the trade-offs be?
+
+Good: I'd be more confident/make fewer errors on average.
+Bad: Intervals get wider, thus say less
+
+
+d. The CI for the age coefficient and the confidence bands below both provide insight into the uncertainty in our sample estimates. Do these provide evidence that, on average, there's a *statistically discernible* increase in wage with age?
+
+YES. The CI Is above 0
+YES. We can't draw a 0 or negative sloped line within the bands.
+
+```{r}
+# CI reminder
+wage_model_1 %>% 
+  pluck("fit") %>% 
+  confint()
+    
+# Plot the model
+ggplot(CPS_2018, aes(x = age, y = wage)) + 
+  geom_smooth(method = "lm")
+```
+    
+
+
+e. Is the increase *practically meaningful*?   
+
+
+YES. An increase of $584.7934 per year in age is practically meaningful.
+
+
+
+\
+\
+
+
+
+
+
+**EXAMPLE 2: Step 1 -- specify the hypotheses**    
+
+Let's move on to a more formal hypothesis test. A researcher states the following hypotheses about the (unknown) population age coefficient $\beta_1$:  
+
+$H_0$: $\beta_1 = 0$    
+$H_a$: $\beta_1 > 0$
+
+How can we interpret these hypotheses?    
+
+i. $H_0$: On average, wage increases with age.    
+    $H_a$: There's no association between wage and age.    
+
+ii. $H_0$: On average, wage decreases with age.    
+    $H_a$: There's no association between wage and age.    
+        
+iii. $H_0$: There's no association between wage and age.    
+    $H_a$: On average, wage increases with age.    
+
+iv. $H_0$: There's no association between wage and age.    
+    $H_a$: On average, wage decreases with age.
+
+iii is correct.
+
+\
+\
+
+
+
+
+
+**PAUSE for a thought experiment**
+
+*Innocent until proven guilty.* In Step 2 of the hypothesis test, we must assume that $H_0$ is true and evaluate the compatibility of our estimate with this hypothesis. In our example then, we want to compare *our* age coefficient estimate to the estimates we'd expect to observe IF there were no relationship between wages and age (i.e. if the age coefficient were actually 0). Let's explore this idea.
+
+a. Suppose that each person in our sample gets a piece of paper with their wage and age on it. We then ask them to rip these in half and trade their age with somebody else. What do you expect we'd observe if we plotted the new wage and age pairs?    
+    ```{r}
+    # Check out the first 6 subjects
+    CPS_2018 %>% 
+      select(wage, age) %>% 
+      head()
+    ```
+    
+b. We can simulate this same idea in RStudio:    
+    ```{r}
+    # Run this chunk a few times!!
+    # Swap their ages with each other
+    shuffled <- CPS_2018 %>% 
+      select(wage, age) %>% 
+      mutate(age = sample(age, size = length(age), replace = TRUE))
+    head(shuffled)
+    ```
+    
+    ```{r}
+    # Then plot their relationship
+    ggplot(shuffled, aes(x = age, y = wage)) + 
+      geom_smooth(method = "lm")
+    ```
+    
+
+c. Let's do this a bunch. Take 100 different shuffled samples and use each to estimate the model of wage by age (gray lines). These give us a sense of the sample models we'd expect IF $H_0$ were true. Is *our* sample estimate (blue line) consistent with $H_0$?
+
+```{r}
+#If replace=FALSE, we would get the exact same sample, just in a different order.
+shuffled_models <- mosaic::do(100)*(
+  CPS_2018 %>% 
+    select(wage, age) %>% 
+    sample_n(size = length(age), replace = TRUE) %>% 
+    mutate(age = sample(age, size = length(age), replace = TRUE)) %>%
+    with(lm(wage ~ age))
+)
+head(shuffled_models)
+```
+
+```{r}
+ggplot(CPS_2018, aes(x = age, y = wage)) + 
+  geom_abline(data = shuffled_models, 
+              aes(intercept = Intercept, slope = age), 
+              color = "gray", size = 0.25) +
+  geom_smooth(method = "lm", se = FALSE)
+#Blue line is what we have from our original sample. Gray lines are 100 different scenarios if there was no association between wage and age (null hypothesis is true).
+```
+
+
+
+
+
+\
+\
+
+
+
+
+
+**EXAMPLE 3: Step 2 -- calculating & interpreting a test statistic**
+
+The sampling distribution below captures the range of age coefficient estimates we'd expect to observe IF $H_0$ were true, i.e. IF the actual coefficient were 0. 
+
+- Simulation: This is approximately the range of the slopes in our simulated model lines above.
+
+- Theory: We assume the sample slopes would be centered around 0 (the "truth") with an approximate standard error of 47.89 (as estimated via mathematical formula): 
+
+```{r fig.width=8, echo=FALSE}
+# IGNORE THE SYNTAX!!!
+ggplot() + 
+  stat_function(fun = dnorm) + 
+  labs(y = "density", x = "possible estimates IF H0 were true") + 
+  scale_x_continuous(limits = c(-4,12), 
+    breaks = c(-3:3, 11.46), labels = c("-143.67", "-95.78", "-47.89", "0", "47.89", "95.78", "143.67", "548.79")) + 
+  geom_point(aes(x = 11.46, y = 0), color = "red")
+#The red dot is what we got, way outside three std deviations.
+``` 
+
+
+a. *Our* sample estimate of 548.79 is marked by the red dot. Its **test statistic** provides one measure of the compatibility of this estimate with $H_0$. Report the test statistic for our hypothesis test. For practice, both calculate this value "by hand" and find it in your model summary table.
+
+test statistic: 11.46 = (548.7934 - 0) / 47.89052
+```{r}
+wage_model_1 %>% 
+  tidy()
+```
+
+
+b. Interpret the test statistic: Our estimate of the age coefficient is 11.46 standard errors above 0. (very far)
+
+
+
+
+\
+\
+
+
+
+**EXAMPLE 4: Step 2 -- using a test statistic**
+
+What can we conclude from the test statistic?    
+
+- Our sample data is *not* consistent with the null hypothesis that there's no discernible association between wage and age.
+
+- Our sample data *is* consistent with the null hypothesis that there's no discernible association between wage and age.
+
+
+
+No
+
+\
+\
+
+
+
+
+**EXAMPLE 5: Step 2 -- Calculate a p-value**
+
+The p-value provides another measure of the compatibility of our sample estimate with $H_0$. It's the probability that we would have observed such a large coefficient estimate (548.79 or greater) IF in fact there were no association between wages and age (i.e. if $H_0$ were true). That is, it's a **conditional probability**:
+
+P(we'd get a coefficient of $548.79^+$ | $H_0$ is true)
+
+P value is asking what's the chance that we get the red dot super far off on the tail.
+
+
+a. Use the 68-95-99.7 Rule with the sketch from Example 3 to approximate the p-value:    
+    i. less than 0.0015
+    ii. between 0.0015 and 0.025
+    iii. bigger than 0.025
+    
+i. less than 0.0015
+
+
+b. Calculate a more accurate p-value from the model `summary()`. Don't forget to divide by 2!  
+
+3.258478e-30 / 2, basically 0.
+
+```{r}
+wage_model_1 %>% 
+  tidy()
+```
+
+
+
+
+
+
+\
+\
+
+
+
+**EXAMPLE 6: Step 2 -- Interpret the p-value**
+
+
+How can we interpret the p-value?    
+
+i. It's very unlikely that we'd have observed such a steep increase in wages with age among our sample subjects "by chance", i.e. if in fact there were no relationship between wages and age in the broader labor force.
+
+ii. In light of our sample data, it's very unlikely that wages increase with age.    P(H_a | data)
+
+iii. In light of our sample data, it's very unlikely that wages and age are unrelated.    P(H_0 | data)
+
+i
+P(data | H_0)
+
+\
+\
+
+
+**EXAMPLE 6 follow-up**
+
+Stated in formal probability terms, notice that the above options are each conditional probabilities. Only 1 of these is the correct interpretation of a p-value, though it's all too often misinterpreted as one of the other 2 options.
+
+i. P(data | $H_0$)
+
+ii. P($H_a$ | data)
+
+iii. P($H_0$ | data)
+
+
+
+\
+\
+
+
+
+
+
+**EXAMPLE 7: Step 3 -- Conclusion**    
+
+Finally, let's pull it all together and make some conclusions about our hypotheses. 
+
+a. Based on the hypothesis test, is there a **statistically discernible** association between wages and age? Explain.
+
+Yes. CI for age coeff doesn't include 0. p-value was very small.
+
+
+b. Does this conclusion agree with the one we made using the confidence interval in Example 1? Yes
+
+
+```{r}
+wage_model_1 %>% 
+  pluck("fit") %>% 
+  confint()
+```
+
+
+
+
+
+\
+\
+
+
+
+**EXAMPLE 8: Step 3 -- A more nuanced conclusion**    
+
+*Statistically* discernible results merely indicate that an association between wages and age *exists*. Consider an important follow-up question: is the *magnitude* of this association *practically significant*? That is, in the context of wages, is the scale of our coefficient estimate ($548.79 per year in age) large enough to be *meaningful*? Yes. Subjective, but can make a guess based on being an adult working in the USA. context matters.
+
+
+
+\
+\
+
+
+
+
+---
+
+**A note on p-values & "statistical significance"**
+
+- p-values are often overemphasized    
+    Outside this class, you might have heard results with a small p-value referred to as "statistically significant." This terminology tends to suggest that the results are meaningful. Yet this isn't necessarily the case! We might have results that are statistically significant but not practically meaningful. So as to not mislead ourselves and others, and as advocated for by the statistics community, we'll use the term "statistically discernible" instead. 
+
+- p-values are often misinterpreted    
+    Thinking about the conditional probability P(data | H0) is less natural than P(H0 | data). In fact, the p-value is very often misinterpreted as the latter. Though the p-value and everything else we've learned in this class is through the frequentist philosophy lens, the *Bayesian* philosophy answers the latter question (P(H0 | data)). If you're curious, check out the book I co-authored [Bayes Rules!](https://www.bayesrulesbook.com/)
+
+
+--- 
+
+
+
+
+
+\
+\
+\
+\
+
+
+
+
+# Exercises
+
+
+## Practice with hypothesis testing
+
+In the next steps, we'll explore the relationship between wages and marital status among *18--25 year olds*. Let's *estimate* this relationship using our sample data:
+
+```{r}
+# Filter the data
+CPS_2018_young <- CPS_2018 %>% 
+  filter(age <= 25, wage < 200000)
+
+# Model the relationship
+wage_model_2 <- lm_spec %>% 
+  fit(wage ~ marital, data = CPS_2018_young)
+wage_model_2 %>% 
+  tidy()
+
+# Plot the relationship
+ggplot(CPS_2018_young, aes(y = wage, x = marital)) + 
+  geom_boxplot()
+```
+
+
+
+
+
+\
+\
+
+
+
+### Exercise 1: Confidence interval
+
+a. Introduce yourselves! What would your ideal morning look like tomorrow (Saturday)?
+
+b. Calculate and interpret a 95% confidence interval for the  `maritalsingle` coefficient. Hot tip: first interpret just the estimate to remind yourself what this coefficient is measuring.    
+
+```{r}
+wage_model_2 %>% 
+  pluck("fit") %>% 
+  confint()
+
+wage_model_2 %>% 
+  tidy()
+```
+
+
+c. Based on this interval, are you confident that on average, single workers have lower wages than married workers?    
+    
+Yes. Single workers have lower wages than married workers.
+
+
+\
+\
+
+
+
+### Exercise 2: Hypotheses
+
+A researcher states the following hypotheses about the (unknown) population maritalsingle coefficient $\beta_1$:    
+
+$H_0$: $\beta_1 = 0$    
+$H_a$: $\beta_1 < 0$    
+
+How can we interpret these hypotheses?    
+
+-  $H_0$: There's no association between wage and marital status.    
+    $H_a$: On average, wage decreases with marital status.    
+    
+-  $H_0$: There's no association between wage and marital status.    
+    $H_a$: On average, wages are higher among single vs married workers.    
+
+-  $H_0$: There's no association between wage and marital status.    
+    $H_a$: On average, wages are lower among single vs married workers.
+    
+It's the last one.    
+    
+
+\
+\
+
+
+
+
+### Exercise 3: Test statistic
+
+Report and *interpret* a test statistic for this hypothesis test.    
+
+```{r}
+wage_model_2 %>% 
+  tidy()
+```
+The test statistic is -3.629412.
+Our estimate is -3.629 standard deviations away from 0, so we shouldn't use the null hypothesis.
+
+\
+\
+
+
+
+
+### Exercise 4: p-value   
+
+a. Approximate a p-value for this hypothesis test using the 68-95-99.7 Rule:
+
+    - less than 0.0015
+    - between 0.0015 and 0.025
+    - bigger than 0.025    
+
+less than 0.0015
+
+b. Calculate a more accurate p-value from the model summary table.    
+
+    ```{r}
+    wage_model_2 %>% 
+      tidy()
+    ```
+2.955178e-04 / 2
+
+
+c. Interpret this p-value.
+
+It is essentially 0, which tells us that our data is not compatible with the null hypothesis.
+
+It is very unlikely that we'd have observed such a steep decrease in wages with single marital status in our sample subjects "by chance".
+
+\
+\
+
+
+
+### Exercise 5: Conclusion
+    
+Is the decrease in typical wages among single workers vs married workers is statistically discernible?
+    
+Yes.    
+
+\
+\
+
+
+---
+
+
+**PAUSE: We just did a "Two Sample t-Test"!**
+
+The hypothesis test above essentially compared two population means: the mean wage of single people and the mean wage of married people. This is known as a *two sample t-test*. "Two" sample because we're comparing *two* means.  
+
+---
+
+
+
+
+\
+\
+
+
+
+### Exercise 6: A hypothesis test for the intercept   
+    
+We can also test hypotheses about model intercepts but, for reasons you'll observe here, these aren't usually helpful. For example, in the population model $\text{wage} = \beta_0 + \beta_1\text{ maritalsingle}$ we can test:    
+
+$H_0$: $\beta_0 = 0$    
+$H_a$: $\beta_0 \ne 0$    
+
+We observe in the model `summary()` below that the p-value for this hypothesis test is miniscule (1.85 * 10^(-52)):    
+
+```{r}
+wage_model_2 %>% 
+  pluck("fit") %>% 
+  confint()
+#Our beta_0 is our intercept which is not equal to 0
+```
+
+Keeping in mind the meaning of the $\beta_0$ coefficient, what do you conclude?    
+
+- The relationship between wages and marriage status is statistically discernible.
+
+- The relationship between wages and marriage status is not statistically discernible    
+
+- We have statistically discernible evidence that the average wage of single workers is non-0.    
+
+- We have statistically discernible evidence that the average wage of married workers is non-0.    
+
+beta_0 + beta_1*maritalsingle = TRUE    
+beta_0 is considering the married workers, so it's the last one.
+    
+    
+\
+\
+
+
+
+---
+
+**PAUSE: We just did a "One Sample t-Test"!**
+
+The hypothesis test above essentially compared one population mean (the mean wage of married people) to a hypothesized value (in this case, 0).  This is a special case of a **one sample t-test**.
+
+---
+
+
+
+\
+\
+
+
+
+
+### Exercise 7: Controlling for age
+    
+Since we haven't controlled for important covariates, we should be wary of using the above results to argue that there's wage discrimination against single people. To this end, consider the relationship between wages and marriage status when controlling for age:    
+
+$$\text{wage} = \beta_0 + \beta_1\text{ maritalsingle} + \beta_2\text{ age}$$
+
+Check out our sample estimate of this model:    
+
+```{r}
+wage_model_3 <- lm_spec %>% 
+  fit(wage ~ marital + age, data = CPS_2018_young)
+
+# Model summary
+wage_model_3 %>% 
+  tidy()
+
+# Confidence intervals
+wage_model_3 %>% 
+  pluck("fit") %>% 
+  confint()
+
+#Notice that we have 0 in the confidence interval! -4819.252 to 1907 includes zero. Between 2.5% and 97.5% is our 95%!
+```
+
+What can we conclude from the 95% confidence interval for the marital single coefficient?
+
+- There's a statistically discernible association between wage and marital status.
+
+- There's not a statistically discernible association between wage and marital status (i.e. marital status is not a discernibly useful predictor of wage).
+
+- When controlling for age, there's a statistically discernible association between wage and marital status.    
+
+- When controlling for age, there's not a statistically discernible association between wage and marital status (i.e. marital status is not a discernibly useful predictor of wage).
+
+The last one. 
+
+
+
+
+
+\
+\
+
+
+
+### Exercise 8: Testing hypotheses
+
+Consider the following hypotheses about the maritalsingle coefficient in our model of wage by marital status and age:  
+
+$H_0$: $\beta_1 = 0$    
+$H_a$: $\beta_1 < 0$
+
+How can we interpret these hypotheses?
+
+
+$H_0$: When controlling for age, there's no association between wages and marital status.
+$H_a$: When controlling for age, single workers tend to have smaller wages than married workers.
+
+    
+$H_0$: There's no association between wages and marital status.    
+$H_a$: Single workers tend to have smaller wages than married workers.    
+
+It's the first.
+
+
+\
+\
+
+ 
+
+### Exercise 9: Testing the hypotheses
+    
+a. Report the test statistic and p-value for these hypotheses.
+
+```{r}
+wage_model_3 %>% 
+  tidy()
+```
+Our test statistic is -0.8493312 and our p-value is 0.39585 / 2. Our p-value is large.
+
+b. What conclusion can we make from these results?
+
+When controlling for age, there is no statistically discernable association between wage and marital status.
+
+
+\
+\
+
+
+
+### Exercise 10: Reflection
+
+Bringing it all together, what can we conclude about the relationship between wages and marital status from the combined results from `wage_model_2` and `wage_model_3`?
+
+When controlling age, there is no association between wages and marital status.
+
+If we know two person's age is the same, then there is not as much association between their wage and marital status. But if I don't know their ages, and I know one is married and one is single, then the married person is likely to make more.
+
+\
+\
+
+
+
+### Exercise 11: OPTIONAL -- Interaction?
+
+- If you completed Homework 1, hence explored interaction terms, consider the following exercise. Otherwise, NBD. In some cases, our research questions define what model we should construct. For example, we built `wage_model_3` because we wanted to explore the relationship between wages and marital status while controlling for age. In other cases, hypothesis tests can aid the model building process. For example, should we have included an interaction term in `wage_model_3`? Build a new model and conduct a new hypothesis test that helps you answer this question.
+
+- Go back to the main room and then take a break. I will post a time in the chat when we'll all meet back as a group.
+
+
+
+
+
+\
+\
+\
+\
+
+
+
+## Reflection
+
+**Hypothesis "t"-Tests for Model coefficients**
+
+Consider a population model of response variable $y$ by explanatory terms $x_1$, $x_2$, and $x_3$: $$y = \beta_0 + \beta_1x_1 + \beta_2x_2 + \beta_3x_3$$ where population coefficients $\beta_0, \beta_1, \beta_2, \beta_3$ are unknown.  Then the p-value given in the last column of the $x_1$ row in the model summary table corresponds to the following test: 
+
+$$\begin{split}
+H_0: &  \; \beta_1 = 0 \\
+H_a: &  \; \beta_1 \ne 0 \\ 
+\end{split}$$
+
+
+In words:    
+
+- $H_0$ represents "no $x_1$ effect", i.e. when controlling for $x_2$ and $x_3$ there's no discernible relationship between $x_1$ and $y$.    
+
+- $H_a$ represents an "$x_1$ effect", i.e. even when controlling for $x_2$ and $x_3$ there's a discernible relationship between $x_1$ and $y$.  
+
+\
+
+Note: We typically test a one-sided alternative $H_a: \beta_1 < 0$ or $H_a: \beta_1 > 0$. In this case, we divide the reported p-value by 2.    
+
+
+
+
+
+
+
+\
+\
+\
+\
+
+
+
+
+
+**A Survey of Hypothesis Tests**
+
+Though we can use confidence intervals to answer such inferential questions, **hypothesis tests** provide a formal framework. The following are just a few of the *many* types of hypothesis tests you might encounter. Though they differ in their goals, their structure is the same!
+
+\
+
+Test Name                       Population quantities of interest       Example
+------------------------------- --------------------------------------- --------------------------------------------------------------------
+t-tests for model coefficients  model coefficients                      When controlling for job industry, is education associated with wage?
+ANOVA                           multiple model coefficients             With all categories combined, is job industry associated with wage?
+one sample t-test               1 mean                                  Is the mean wage above $50,000?
+two sample t-test               2 independent means                     Is the mean wage higher for married vs single people?
+ANOVA                           2^+^ independent means
+paired t-test                   2 *paired* means                        Is mean cholesterol pre-drug > mean post-drug?
+
+
+
+
+
+
+
+
+
+
+
+
+\
+\
+\
+\
+
+
+
+
+
+##  Hypothesis testing pitfalls
+
+Just as there's error in our sample estimates and confidence intervals, there's the potential for error in hypothesis testing:
+
+- **Type I error (false positive)**    
+    Reject $H_0$ when $H_0$ is actually true.    
+    
+    *We* control the Type I error rate. For example, using 0.05 as a loose cut-off for our p-value is like using 95% confidence for a CI. It will lead to an error for roughly 5% of possible samples.
+
+- **Type II error (false negative)**    
+    Don't reject $H_0$ when $H_0$ is actually false.    
+    
+    We *cannot* control the Type II error rate. In general, it's smaller when: (1) our sample size is large, (2) the effect size ($\beta$) is large, and (3) the relationship of interest is strong.    
+
+
+\
+
+
+
+In this section, you'll check out other common misconceptions / mistakes that people make in hypothesis testing so that (1) you don’t make these mistakes yourself; and (2) you can read others’ work with a healthy critical eye.
+
+
+\
+\
+
+
+### Exercise 12: Dichotomania
+
+**Is there** a relationship? vs. **What is** the relationship? Dichotomania is an extreme overemphasis on the first question. Scroll through [this article](https://mchankins.wordpress.com/2013/04/21/still-not-significant-2/) and explain why it's funny.
+   
+
+ 
+\
+\
+
+
+
+### Exercise 13: The claim
+
+Two researchers make a claim: songs in the `latin` genre are longer than those in the `pop` / `edm` genres. Thus they're interested in the population model of song `duration` (in seconds) by `latin_genre`:
+
+duration = $\beta_0$ + $\beta_1$ latin_genreTRUE
+
+with the following hypotheses:
+
+$H_0$: $\beta_1 = 0$    
+$H_a$: $\beta_1 > 0$    
+
+To test these hypotheses, Researcher 1 collects data on 20 songs and uses this to model song `duration` (in seconds) by `latin_genre`: 
+
+```{r}
+# Load the data
+spotify_small <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/spotify_example_small.csv") %>% 
+  select(track_artist, track_name, duration_ms, latin_genre) %>% 
+  mutate(duration = duration_ms / 1000)
+
+# Construct the model
+spotify_model_1 <- lm_spec %>% 
+  fit(duration ~ latin_genre, data = spotify_small)
+
+spotify_model_1 %>% 
+  tidy()
+```   
+
+a. Construct and interpret a 95% confidence interval for the actual `latin_genre` population coefficient $\beta_1$.    
+
+```{r}
+spotify_model_1 %>% 
+  pluck("fit") %>% 
+  confint()
+```
+
+
+
+b. Using this confidence interval alone, what conclusion do you make about the hypotheses?    
+    - We have statistically discernible evidence that latin genre songs tend to be longer than pop / edm songs.        
+    - We do not have statistically discernible evidence that latin genre songs tend to be longer than pop / edm songs.        
+
+The last
+
+\
+\
+
+
+
+### Exercise 14: Researcher 2 -- part 1
+
+Researcher 2 has the same research question, but gathers a different set of data:    
+    
+```{r}
+spotify_big <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/spotify_example_big.csv") %>% 
+  select(track_artist, track_name, duration_ms, latin_genre) %>% 
+  mutate(duration = duration_ms / 1000)
+```
+  
+
+a. How many songs did Researcher 2 collect in `spotify_big`?
+
+```{r}
+dim(spotify_big)
+```
+16216 songs
+
+b. Using the `spotify_big` data, construct and comment on a visualization of the relationship between `duration` and `latin_genre`.
+
+```{r}
+ggplot(spotify_big,aes(x=duration,fill=latin_genre))+
+  geom_density(alpha=0.5)
+```
+It looks like they have approximately the same duration.
+
+
+\
+\
+
+
+
+### Exercise 15: Researcher 2 -- part 2
+    
+Using Researcher 2's data, let's model `duration` by `latin_genre`:    
+
+```{r}
+# Construct the model
+spotify_model_2 <- lm_spec %>% 
+  fit(duration ~ latin_genre, data = spotify_big)
+  
+spotify_model_2 %>% 
+  tidy()
+
+spotify_model_2
+```
+
+a. Interpret the `latin_genreTRUE` coefficient.
+The latin_genreTRUE coefficient suggests that for every 212.67 seconds in a song, a song being latin means that it will be 1.555 seconds longer.
+
+
+
+b. In the context of song listening, is this a large or small effect size?
+    
+Small    
+    
+    
+
+\
+\
+
+
+### Exercise 16: Researcher 2 -- part 3
+
+Let's conclude Researcher 2's analysis.    
+
+a. Report the p-value for the researcher's hypothesis test ($H_a$: the `latin_genreTRUE` coefficient is positive).
+
+0.03647731 / 2
+
+b. How can we interpret this p-value "p"?    
+    - There's only a p% chance that latin genre songs tend to be longer than pop / edm songs.    
+    - If there were truly no difference in the duration of latin vs pop / edm songs (in the broader population of songs), there's only a p% chance that we'd have gotten a sample in which the observed difference was so large. 
+    - There's only a p% chance that latin genre songs tend to be the same length as pop / edm songs.    
+
+It's the second one.
+
+
+c. If the researchers made a yes-or-no decision using a 0.05 significance level, what would they say?    
+    - We have statistically discernible evidence that latin genre songs tend to be longer than pop / edm songs.        
+    - We do not have statistically discernible evidence that latin genre songs tend to be longer than pop / edm songs.  
+        
+We would have statistically discernible evidence that latin genre songs are longer.
+
+\
+\
+
+
+### Exercise 17: Reflection
+
+HUH?!?  You've just witnessed the stark difference between **statistically discernible** and **practically meaningful** results. Explain *why* this happened. NOTE: This result seems silly, but is quite common in practice. Hence it emphasizes the importance of investigating statistical and practical significance hand-in-hand.
+
+We can see that there is some sort of statistically discernable association between them, but 1.56 seconds is simply not practically meaningful.
+
+    
+\
+\
+
+
+
+### Exercise 18: Multicollinearity (i.e. correlation among our predictors)
+    
+Consider the following relationship of daily bike share ridership among "casual" riders (non-members) with the "feels like" temperature and actual temperature: 
+
+```{r}
+# Load the data
+bikes <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/bike_share.csv")
+
+# Plot the relationship
+ggplot(bikes, aes(x = temp_feel, y = riders_casual, color = temp_actual)) + 
+	geom_point()
+
+# Construct a model
+bike_model <- lm_spec %>% 
+  fit(riders_casual ~ temp_feel + temp_actual, data = bikes)
+
+bike_model %>% 
+  tidy()
+```
+
+a. Which of the following null hypotheses corresponds to the p-value reported in the `temp_feel` row of the model summary table?       
+    - $H_0$: there's an association between ridership and "feels like" temperature    
+    - $H_0$: there's no association between ridership and "feels like" temperature    
+    - $H_0$: when controlling for actual temperature, there's an association between ridership and "feels like" temperature     
+    - $H_0$: when controlling for actual temperature, there's no association between ridership and "feels like" temperature    
+
+The last one
+
+
+b. Your friend makes a common mistake. Noting its large p-value, they conclude that ridership isn't associated with "feels like" temperature. Construct and analyze a new model that illustrates your friend's mistake.    
+
+```{r}
+bike_model_2 <- lm_spec %>% 
+  fit(riders_casual~temp_feel,data=bikes)
+
+bike_model_2 %>% 
+  tidy()
+```
+
+ 
+c. Explain *why* this happened, i.e. why the original model and your new model provide two different insights into the relationship between ridership and "feels like" temperature. Support your argument with a visualization.    
+
+```{r}
+ggplot(bikes,aes(y=temp_actual,x=temp_feel))+
+  geom_point()
+```
+This happened because we're looking at two predictors which do nearly the same thing. temp_actual and temp_feel are strongly associated.
+
+\
+\
+
+
+
+### Exercise 19: A new kind of test
+    
+Check out a more complete summary for our original `bike_model`:    
+
+```{r}
+bike_model %>% 
+  pluck("fit") %>% 
+  summary()
+```    
+
+Whereas the test statistics / p-values in the coefficient table test the significance of *individual* predictors, the `F-statistic` row at the bottom of the model summary tests:
+
+H0: *none* of the predictors are related to the response    
+Ha: *at least one* of the predictors is related to the response    
+
+What is the conclusion of this test and why is it actually helpful here? For example, how might it have prevented your friend's mistake?
+
+
+    At least one of the predictors is significant.
+    This is helpful since neither of the predictors alone are significant. This test indicates that something is useful here, thus the non-significant results are likely due to multicollinearity.
+
+
+
+\
+\
+
+
+
+
+### Exercise 20: Doing lots of tests can be dangerous -- 1    
+Suppose researchers asked pregnant people about their consumption of 132 different foods. For each food, they then tested for an association of that food with having child that grows up to be left-handed (a figure which is roughly 10% among the general population):
+
+H0: proportion of children that are left-handed = 0.1    
+Ha: proportion of children that are left-handed $\ne$ 0.1
+
+(Seem silly? This scenario is based on a real article ["You are what your mother eats"](https://royalsocietypublishing.org/doi/full/10.1098/rspb.2008.0105) in the reputable journal, *Proceedings of the Royal Society B - Biological Sciences*, which asserted that eating cereal during pregnancy is associated with having a male baby.)    
+
+In reality, NONE of these 132 foods are truly linked to handedness -- H0 is true in all 132 cases. With this in mind, let's *simulate* what results the researchers might find using the special `birthtest` function. First, define this function:    
+
+```{r}
+birthtest <- function(n){
+  foods <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/food_list.csv")
+  nleft <- rbinom(132, size = n, prob = 0.1)
+  nright = n - nleft
+  data <- data.frame(food = foods[,1], left = nleft, right = nright)
+  pvals = rep(0,132)
+  nleft = data$left 
+  for(i in 1:132){
+    pvals[i] = prop.test(x = nleft[i], n, p = 0.1)$p.value
+  }
+  data %>% 
+    mutate(p_value = pvals)
+}
+```
+
+Next, for each of the 132 foods, we'll simulate the handedness of children born to 100 pregnant people that eat those foods. Set your random number seed to your own phone number:
+
+```{r eval = FALSE}
+set.seed(1585)
+handedness_tests <- birthtest(n = 100)
+head(handedness_tests)
+```
+
+Your `handedness_tests` data contains 132 rows, each corresponding to a different food. Arrange this in ascending order of `left` handed babies. We'd expect roughly 10 of 100 children to be left-handed. Which food deviates the most from this expectation? NOTE: Look at both the `head()` and `tail()`.
+    
+```{r}
+handedness_tests %>% 
+  arrange(desc(left))
+```
+
+
+
+\
+\
+
+
+
+
+### Exercise 21: Doing lots of tests can be dangerous -- 2    
+a. For each food, we'll use our sample data to test whether left-handedness significantly differs from 0.1. In doing so we might make a Type I error. What does this mean in our setting?    
+    - Conclude that a food is linked to handedness when it's not.    
+    - Conclude that a food is not linked to handedness when it is.
+
+The first one
+
+b. The p-values associated with each food are reported in `handedness_tests`. Identify the foods that correspond to Type I errors, i.e. have a p-value < 0.05 despite the fact that there's actually no association with handedness.
+
+Lettuce, cottage cheese, bf, grapefruit, beef taco
+
+```{r eval = FALSE}
+handedness_tests %>% 
+  arrange(p_value) %>% 
+  select(food,p_value)
+```
+
+
+c. For each food you identified in part b, can you imagine a fake headline trumpeting your findings?    
+
+"Pregnant Women Eating Lettuce Increases Risk of Children"        
+
+\
+\
+
+
+
+
+### Exercise 22: Multiple testing
+    
+Let's explore the math behind this phenomenon. Assume we conduct each hypothesis test at the 0.05 significance level. Thus in any *one* test, there's a 0.05 probability of making a Type I error when H0 is true. What if we conduct *two* tests? Assuming H0 is true for both, there are 4 possible combinations of conclusions we might make:
+
+
+Test 1              Test 2              Probability
+------------------- ------------------- ---------------------
+not significant     not significant     `0.95*0.95 = 0.9025`
+not significant     significant         `0.95*0.05 = 0.0475`
+significant         not significant     `0.95*0.05 = 0.0475`
+significant         significant         `0.05*0.05 = 0.0025`
+TOTAL                                   1
+
+
+\
+
+a. Based on the above table, if we conduct two tests and H0 is actually true for both, what's the probability we make **at least one** Type I error?
+
+```{r}
+0.475+0.475+0.0025
+```
+
+
+
+b. In general, suppose we conduct "g" tests and that H0 is true for each one. The probability of getting **at least one** Type I error is `1 - 0.95^g`. (NOTE: You neither need to prove nor memorize this, but you can if you have extra time!) This is called the *overall* or *family-wise* Type I error rate. Use this formula to calculate the following:    
+
+- overall Type I error rate when g = 1   
+```{r}
+1-0.95^1
+```
+
+
+- overall Type I error rate when g = 10    
+```{r}
+1-0.95^10
+```
+
+
+- overall Type I error rate when g = 100
+```{r}
+1-0.95^100
+```
+
+
+
+\
+\
+
+
+
+### Exercise 23: Reflection
+
+a. Related to our above experiment, explain why this [cartoon](https://imgs.xkcd.com/comics/significant.png) is funny.    
+
+
+b. Later, you can read more about how this silly experiment is [not that far-fetched](https://fivethirtyeight.com/features/you-cant-trust-what-you-read-about-nutrition/).
+    
+    
+
+    
+\
+\
+
+
+### Exercise 24: p-hacking
+
+fivethirtyeight put together a [nice (but scary) simulation](https://projects.fivethirtyeight.com/p-hacking/) that highlights the dangers of fishing for significance and the importance of always questioning: how many things did people test? can I replicate these results? what data did people use? what was their motivation? how did they measure their variables? might their results have changed if they used different measurements?
+
+Use this simulation to "prove" 2 different claims. For both, be sure to indicate what response variable (eg: Employment rate) and data (eg: senators) you used: 
+
+- the economy is significantly better when Republicans are in power    
+- the economy is significantly better when Democrats are in power    
+
+Based on Senators and Representatives, Employment rate is higher when Republicans are in power.
+
+\
+\
+
+
+
+### Exercise 25: OPTIONAL -- Bonferroni
+
+As the number of tests increase, we've observed that the chance of observing at least one Type I error increases. One solution is to *inflate* the observed p-value from each test. For example, the **Bonferroni method** penalizes for testing "too many" hypotheses by artificially inflating the p-value:  
+    
+Bonferroni-adjusted p-value = observed p-value `*` total # of tests
+
+Calculate the Bonferroni-adjusted p-values for our 132 tests:    
+
+```{r eval = FALSE}
+handedness_tests <- handedness_tests %>% 
+   mutate(bonferroni_p = p_value * 132)
+```
+
+**NOTE:** There are other less conservative approaches.
+
+a. Of your 132 tests, what percent are still significant? That is, what is the overall Type I error rate?  
+
+```{r eval = FALSE}
+handedness_tests %>% 
+    filter(bonferroni_p < 0.05)
+```
+
+b. This is better than making a bunch of errors. But can you think of any trade-offs of using the Bonferroni correction?
+
+It’s pretty conservative, making it tough to establish statistical significance (the p-value would have to be very, very low). Thus this might increase the Type II error rate, i.e. we might make more false positives.
+
+\
+\
+\
+\
+
+
+
+## Wrapping up
+
+Once you finish:
+
+- Start on Homework 4.
+- Check out the post-bootcamp material in the online manual.
+

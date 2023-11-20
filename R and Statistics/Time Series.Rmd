@@ -1,0 +1,693 @@
+---
+title: "Time Series"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+date: "2023-08-25"
+---
+14 Time Series
+14.1 Motivation
+
+The UKgrid data in the UKgrid package tracks electricity demand in the United Kingdom:
+```{r}
+library(UKgrid)
+data(UKgrid)
+```
+Let’s clean up the data using the timetk and janitor packages. (The data wrangling isn’t the focus here, so don’t stress about the code.)
+```{r}
+library(timetk)
+library(janitor)
+library(UKgrid)
+uk_monthly_data <- UKgrid %>% 
+  clean_names() %>% 
+  dplyr::select(timestamp, nd) %>% 
+  summarize_by_time(.date_var = timestamp,
+                    .by = "month",
+                    nd = sum(nd, na.rm = TRUE)) %>% 
+  filter_by_time(.date_var = timestamp, 
+                 .start_date = "2010",
+                 .end_date = "2018") %>% 
+  rename(date = timestamp, electricity = nd) %>% 
+  mutate(electricity = electricity / 1000000)
+```
+The resulting data frame records the total monthly electricity usage across the UK, measured in millions of megawatts (MW), from January 2010 through December 2018:
+```{r}
+head(uk_monthly_data, 3)
+tail(uk_monthly_data, 3)
+```
+At first glance, it seems that a linear regression model could capture electricity usage over time:
+```{r}
+ggplot(uk_monthly_data, aes(x = date, y = electricity)) + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+```
+But after connecting the dots, notice that linear regression doesn’t capture the whole picture:
+```{r}
+ggplot(uk_monthly_data, aes(x = date, y = electricity)) + 
+  geom_line() + 
+  geom_smooth(method = "lm")
+```
+The example here exhibits some common patterns in time series data:
+
+    dependence
+    The energy usage in one month depends upon, or is related to, the energy usage in the previous months. For example, energy usage in February 2017 tells us something about energy usage in March 2017. (Again, this runs counter to one of our linear regression assumptions!)
+
+    trend
+    Overall, energy usage has decreased over time.
+
+    seasonality
+    There is cyclic or seasonal behavior in energy usage – energy usage is higher in the UK’s winter months than in summer months.
+
+
+New tools
+
+We could try to tweak our linear regression models to handle this time series data. However, there exist tools that are built specifically for this task.
+
+14.2 Tools and resources
+Time series modeling tools
+
+There are several approaches to modeling time series data, including but not limited to:
+
+    ARMA, ARIMA, and SARIMA models (foundational to time series analysis)
+    exponential smoothing
+    MARS (multivariate adaptive regression splines)
+    prophet models
+    linear regression using time-related predictors
+
+Our focus: ARMA and SARIMA
+The current tutorial will provide a brief introduction to building and exploring ARMA and SARIMA models in R using tidy techniques. BUT the theory, methodology, and applications of SARIMA, let alone the broader time series field, cannot and will not be covered in depth here. The goal is to simply give you a taste for this area and some resources for learning more.
+
+Additional resources
+
+After the brief introduction here, you’re encouraged to explore more in-depth time series resources. Here are just a few:
+
+    Resources for learning more about time series theory and applications:
+        “Time Series Analysis and Its Applications – With R Examples” by Shumway and Stoffer
+        “Forecasting: Principles and Practice” by Hyndman and Athanasopoulos
+    Guides for tidy time series analysis in R:
+        https://www.r-bloggers.com/2020/06/introducing-modeltime-tidy-time-series-forecasting-using-tidymodels/
+        https://business-science.github.io/modeltime/articles/getting-started-with-modeltime.html
+
+14.3 Simulation
+In this section, we’ll use simulated data and related untidy-ish R code to explore the foundations of ARIMA models. You’ll subsequently apply these techniques to real data using tidy code. Thus, focus on the concepts here, not the code.
+
+1. White noise
+Consider a time series (y1,y2,y3,...) and let yt be the outcome at time t. When the time series outcomes are not time dependent, they will behave like white noise:
+  
+  yt=c+εt
+
+where
+
+    outcomes yt are independent
+    c is the long-term average of the y outcomes
+    εt∼N(0,σ2) is the residual of yt from this average. In the case of time series data, we can also consider εt to be a shock or forecast error.
+
+To get a sense for white noise data, simulate and plot 500 data points. Comment on what you observe.
+```{r}
+# Simulate the data
+set.seed(1)
+white_noise <- arima.sim(
+  n = 500, 
+  model = list(order = c(0, 0, 0)))
+
+# Plot the data
+ts.plot(white_noise)
+```
+
+2. ACF plots
+Though we simulated the white_noise outcomes to be independent, this property isn’t obvious from the time series plot alone. ACF plots, i.e. plots of the autocorrelation function, are a more reliable tool for examining potential dependence among time series data points.
+
+Let rk denote the correlation between lagged values that are k time points apart. For example, r1 is the correlation between all pairs of subsequent time points yt and yt−1, r2 is the correlation between all outcomes two time points apart yt and yt−2, and so on. An ACF plot plots these correlations rk (y-axis) across a range of lags k (x-axis):
+```{r}
+# ACF plot
+acf(white_noise)
+```
+a) Notice that the correlation at lag 0, equals 1: r0=1. This is always the case. Explain why.
+
+b) The dashed blue lines are a “significance threshold” – correlations that fall outside the lines are statistically significant and those that fall inside the lines are not. Are the white noise time points yt
+significantly correlated with their preceding time points yt−1? That is, is r1 significant?
+
+c) What about r2,r3,...?
+
+Autoregressive models (AR)
+
+Let’s now contrast white noise with a common type of time series behavior: autoregression. An autoregressive model of order p
+, AR(p), assumes that the outcome at time t can be predicted from, or is dependent upon, the previous p outcomes:
+
+  yt=c+ϕ1yt−1+ϕ2yt−2+⋯ϕpyt−p+εt
+
+where the outcomes are stationary:
+
+    the yt values vary around a some long-term average outcome c
+    the yt values vary consistently around c with forecast errors or shocks εt∼N(0,σ2) (homoskedasticity)
+
+NOTE
+
+The assumption of stationarity puts a constraint on the model coefficients ϕ. We’ll note these below for the special cases when p is 1 or 2 (it gets a bit complicated for higher degrees p).
+
+3. AR(1) example
+Consider an AR model of order p=1 where, under the assumption of stationarity, ϕ1 is constrained to be between -1 and 1:
+
+  yt=c+ϕ1yt−1+εt
+  
+a) Simulate and plot the 500 data points from an AR(1) model with ϕ1=0.95. How does this compare to the white noise plot?
+```{r}
+# Simulate the data
+set.seed(5)
+ar1_0.95 <- arima.sim(
+  n = 500, 
+  model = list(ar = 0.95))
+
+# Plot the data
+ts.plot(ar1_0.95)
+```
+
+b)Now check out the ACF plot using the code below. Compare and contrast this ACF plot with that of the white noise data. Things to think about:
+
+    What’s the general shape of this plot?
+    What’s the correlation at lag 1, r1, and how does this relate to the AR(1) coefficient of ϕ1=0.95?
+    Are outcomes 1 time point apart significantly correlated? What about outcomes 10 time points apart? 25 time points apart?
+```{r}
+# ACF plot
+acf(ar1_0.95)
+```
+
+4. PACF plots
+The AR(1) ACF plot confirms that yt and yt−k are correlated, no matter the time lag k. And this correlation fades as k increases. This makes sense – yt is associated with yt−k through all intermediate time points. In fact, the lag k correlation is rk=ϕk1, which fades as k increases. Ignoring the intercept and error terms for simplicity:
+  
+  yt=ϕ1yt−1=ϕ1(ϕ1yt−2)=ϕ21yt−2=ϕ21(ϕ1yt−3)=ϕ31yt−3…=ϕk1yt−k
+  
+Whereas the ACF calculates the k-lag correlation between yt and yt−k, the partial autocorrelation function (PACF) calculates the correlation between yt and yt−k when holding constant or controlling for all outcomes in between. This allows us to understand the pure connection between yt and yt−k that can’t be explained by the “chain” of dependence from one time point to the next. Check out the PACF plot for our simulated AR(1) data:
+```{r}
+# PACF plot
+pacf(ar1_0.95)
+```
+
+a) What’s the general shape of this plot?
+
+b) What’s the partial correlation at lag 1 and how does this relate to correlation at lag 1 as observed in the ACF plot? Why does this make sense?
+
+c) At what lags are the partial autocorrelations significant? Why does this make sense given the structure of an AR(1) model?
+
+5. More AR models
+We’ve simulated a single AR model: AR(1) with coefficient ϕ1=0.95. As a reminder:
+```{r}
+# Simulate the data
+set.seed(5)
+ar1_0.95 <- arima.sim(
+  n = 500, 
+  model = list(ar = 0.95))
+
+# Plot the data
+ts.plot(ar1_0.95)
+```
+```{r}
+# ACF plot
+acf(ar1_0.95)
+```
+```{r}
+# PACF plot
+pacf(ar1_0.95)
+```
+a) Simulate and construct plots for AR(1) data with a smaller coefficient, ϕ1=0.6. Compare and contrast these with the AR(1) outcomes with ϕ1=0.95. (First anticipate how you expect the outcomes to behave!)
+```{r}
+# Simulate the data
+set.seed(5)
+ar1_0.6 <- arima.sim(
+  n = 500, 
+  model = list(ar = 0.60))
+
+# Plot the data
+ts.plot(ar1_0.6)
+
+# ACF plot
+acf(ar1_0.6)
+
+# PACF plot
+pacf(ar1_0.6)
+```
+
+b) Repeat part a for an AR(1) model with a negative coefficient, ϕ1=−0.9. (What do you expect before you do?)
+
+c) Consider an AR(2) model:
+  yt=c+ϕ1yt−1+ϕ2yt−2+εt 
+Under the assumption of stationarity: ϕ2+ϕ1<1, ϕ2−ϕ1<1, ϕ2∈(−1,1). For example, simulate and construct plots for AR(2) data with ϕ1=0.9 and ϕ2=−0.5.
+```{r}
+# Simulate the data
+set.seed(5)
+ar2 <- arima.sim(
+  n = 500, 
+  model = list(ar = c(0.9, -0.5)))
+
+# Plot the data
+ts.plot(ar2)
+
+# ACF plot
+acf(ar2)
+
+# PACF plot
+pacf(ar2)
+```
+
+Using ACF & PACF plots to identify an AR process
+
+When working with real or unsimulated AR(p) time series data, we don’t know the order p. However, the exercises above demonstrated how we can use ACF & PACF plots to help estimate p:
+
+    The ACF of AR(p) data will be exponentially decreasing (in absolute value) as the lags increase.
+    The PACF of AR(p) data will have significant “spikes” up to lag p.
+    
+Moving average models (MA)
+
+Moving average models capture another common type of time series behavior. Recall that an AR(p) model assumes that yt can be predicted from the previous p outcomes or forecasts. In contrast, a moving average model of order q, MA(q), assumes that yt can be predicted from the previous q forecast errors or shocks:
+
+  yt=c+θ1εt−1+θ2εt−2+⋯θqεt−q+εt
+
+where the outcomes are stationary:
+
+    the yt values vary around a some long-term average outcome c
+    the yt values vary consistently around c with forecast errors or shocks εt∼N(0,σ2) (homoskedasticity)
+
+NOTE
+
+As with AR models, the assumption of stationarity puts the same constraints on the model coefficients θ.
+
+6. MA(1) example
+Simulate and plot the 500 data points from an MA(1) model with ϕ1=0.95:
+  yt=c+0.95εt−1+εt
+```{r}
+# Simulate the data
+set.seed(5)
+ma1_0.95 <- arima.sim(
+  n = 500, 
+  model = list(ma = 0.95))
+```
+
+a) Use the plots below to compare and contrast the MA(1) data with θ1=0.95 to the AR(1) data with ϕ1=0.95.
+```{r}
+# MA(1) time series
+ts.plot(ma1_0.95)
+
+# AR(1) time series
+ts.plot(ar1_0.95)
+```
+
+b) Compare and contrast the ACF plots for the MA(1) and AR(1) data. Think: For these two series, what does the ACF plot imply about the dependence of yt on yt−1? About the dependence of yt on values beyond the first lag, (yt−2,yt−3,...,y1)?
+```{r}
+# MA(1) ACF plot
+acf(ma1_0.95)
+
+# AR(1) ACF plot
+acf(ar1_0.95)
+```
+
+c) Compare and contrast the PACF plots for the MA(1) and AR(1) data. Think: For these two series, what does the PACF plot imply about the dependence of yt on yt−k when controlling for the outcomes in between?
+```{r}
+# MA(1) PACF plot
+pacf(ma1_0.95)
+
+# AR(1) PACF plot
+pacf(ar1_0.95)
+```
+
+7. More MA models
+We’ve simulated a single MA model: MA(1) with coefficient ϕ1=0.95. As a reminder:
+```{r}
+# Simulate the data
+set.seed(5)
+ma1_0.95 <- arima.sim(
+  n = 500, 
+  model = list(ma = 0.95))
+
+# Plot the data
+ts.plot(ma1_0.95)
+```
+```{r}
+# ACF plot
+acf(ma1_0.95)
+```
+```{r}
+# PACF plot
+pacf(ma1_0.95)
+```
+a) Simulate and construct plots for MA(1) data with a negative coefficient, θ1=−0.95. Compare and contrast these with the outcomes of our MA(1) model with θ1=0.95.
+
+b) Consider an MA(2) model with θ1=0.9 and θ2=−0.5:             
+  yt=c+0.9εt−1−0.5εt−2+εt
+Compare and contrast the results with our MA(1) model with θ1=0.95.
+
+Using ACF & PACF plots to identify an MA process
+
+    The ACF of MA(q) data will have significant “spikes” up to lag q.
+    The PACF of MA(q) data will be exponentially decreasing (in absolute value) as the lags increase.
+    
+Autoregressive moving average models (ARMA)
+
+It’s often the case that time series outcomes yt
+are dependent on both the previous p outcomes or forecasts (like an AR(p)) and the previous q forecast errors or shocks (like an MA(q)). ARMA models combine these two features:
+
+  yt=c+ϕ1yt−1+ϕ2yt−2+⋯+ϕpyt−p+θ1εt−1+θ2εt−2+⋯θqεt−q+εt
+  
+8. ARMA(1,1)
+Consider the following ARMA(1, 1) model:
+
+  yt=c+0.25yt−1+0.95εt−1+εt
+
+Simulate and inspect plots of data simulated from this model. Think:
+
+    How do the ARMA(1, 1) data compare to AR(1) and MA(1) data?
+    Would you be able to use the ACF and PACF plots to identify the orders of the ARMA(1, 1) data (p=q=1)?
+```{r}
+# Simulate the data
+set.seed(5)
+arma <- arima.sim(
+  n = 500, 
+  model = list(ar = 0.25, ma = 0.95))
+
+# Plot the data
+ts.plot(arma)
+
+# ACF plot
+acf(arma)
+
+# PACF plot
+pacf(arma)
+```
+  
+14.4 Tidy time series analysis
+Above, you used simulated data to explore the patterns among AR(p), MA(q), and ARMA(p, q) data. In this section, you’ll explore how to use tidy modeling tools in R to analyze real time series data. In the process, you’ll be exposed to an extension of the ARMA model: Seasonal autoregressive integrated moving average models (SARIMA). Again, you’re encouraged to visit the resources mentioned earlier to explore these modeling tools in more depth.
+
+Data story
+
+Let’s return to the data on UK electricity usage (in millions of MW) from January 2010 through December 2018. Since this is time series data, we can use shortcut plotting functions in the timetk package:
+```{r}
+library(timetk)
+uk_monthly_data %>%
+  plot_time_series(date, electricity)
+```
+
+Training & testing data
+
+Our ultimate goal is to build a time series model that we can use to forecast future electricity usage. So that we can fairly evaluate this model, let’s split the data into training and testing sets using the time_series_split() function in the timetk package:
+```{r}
+# Split the data into training and testing sets
+splits <- uk_monthly_data %>%
+  time_series_split(assess = "12 months", cumulative = TRUE)
+```
+The training data is stored in training(splits) and includes the 96 first months of data, from January 2010 to December 2017:
+```{r}
+training(splits) %>% 
+  nrow()
+training(splits) %>% 
+  head()
+training(splits) %>% 
+  tail()
+```
+The testing data is stored in testing(splits) and includes the 12 last months of data in 2018:
+```{r}
+testing(splits)
+```
+Before moving to our analysis, check out a time series plot which highlights the training vs testing data:
+```{r}
+splits %>%
+  tk_time_series_cv_plan() %>%
+  plot_time_series_cv_plan(date, electricity)
+```
+
+9. Tidy ACF and PACF
+Let’s forget about the testing data until we’ve built and are ready to evaluate some models. Use the plot_acf_diagnostics() function from the timetk package to construct ACF and PACF plots of the training data:
+```{r}
+training(splits) %>% 
+  plot_acf_diagnostics(date, electricity)
+```
+
+a) Do the ACF and PACF plots confirm dependence amongst the energy usage from month to month? Hence, would a linear regression model be appropriate here?
+
+b) From these plots alone, do you feel confident about an appropriate model and its order: AR(p), MA(q), ARMA(p,q)?
+
+10. MA(1)
+Eventually, we’ll learn how to use built-in R functions to help identify an appropriate ARMA / SARIMA model. For now, let’s just try some things, starting with an MA(1) model. Check out the code below which estimates an MA(1) model using the training data. (Think about how this compares to linear regression lm models.)
+```{r}
+library(tidymodels)
+library(modeltime)
+ma_model <- arima_reg(non_seasonal_ma = 1) %>%
+  set_engine("arima") %>%
+  set_mode("regression") %>%
+  fit(electricity ~ date, training(splits))
+```
+
+a) Using your intuition, pick out the estimated MA(1) coefficient θ1 and estimated long-term average outcome c from the following output:
+```{r}
+ma_model
+```
+
+b) The plot below compares the fitted MA(1) model of energy usage (red dashed line) with the observed data (black line). Notice that the MA(1) model misses the downward trend in electricity usage over time. This is common for an MA model. Why?
+```{r}
+ma_model %>% 
+  pluck("fit") %>%
+  pluck("data") %>%
+  ggplot(aes(x = date, y = .actual)) +
+    geom_line() +
+    geom_line(aes(x = date, y = .fitted), color = "red", linetype = "dashed")
+```
+
+11. AR(3)
+Next, run and check out the code below which estimates an AR(1) model using the training data:
+```{r}
+ar_model <- arima_reg(non_seasonal_ar = 1) %>%
+  set_engine("arima") %>%
+  set_mode("regression") %>%
+  fit(electricity ~ date, training(splits))
+```
+Use the plot below to compare the fitted AR(3) model with the observed data.
+
+    Does the AR(3) model do better than the MA(1)?
+    What flaws do you observe in the AR model fit?
+```{r}
+ar_model %>% 
+  pluck("fit") %>%
+  pluck("data") %>%
+  ggplot(aes(x = date, y = .actual)) +
+    geom_line() +
+    geom_line(aes(x = date, y = .fitted), color = "red", alpha = 0.5, linetype = "dashed")
+```
+
+Seasonality
+Though both the AR and MA models exhibit some sort of 12-month cycle, this seasonality isn’t explicitly built into these models. Specifically, the AR and MA models assume that yt depends upon what happened at a consecutive sequence of previous time points (t−1,t−2,…,t−k), where k is determined by the order of the AR or MA model. In contrast, a seasonal time series model for a 12-month cycle assumes that yt depends upon what happened one year ago, two years ago, up to k years ago, i.e. at time points t−12,t−24,...,t−12k. Check out a plot of energy usage grouped by month:
+```{r}
+training(splits) %>% 
+   mutate(month = as.factor(month(date))) %>% 
+   ggplot(aes(x = date, y = electricity, color = month)) + 
+     geom_point(size = 0.5) + 
+     geom_line() + 
+     scale_color_brewer(palette = "Paired")
+```
+This plot demonstrates that the annual data by month are time series themselves! For example, in a seasonal AR(P) model, yt depends on the outcomes in the P previous years:
+
+  yt=c+ψ1yt−12+ψ2yt−24+⋯+ψPyt−12P+εt
+
+In a seasonal MA(Q) model with a cycle of 12 months, yt depends on the shocks or forecast errors in the Q previous years:
+
+  yt=c+η1εt−12+η2εt−24+⋯+ηQεt−12Q+εt
+
+12. SARIMA
+With all of the facets of time series data (AR, MA, seasonality, etc) and the way in which these facets interact, it can be overwhelming to tune and identify the “best” model. By switching our model engine from arima to auto_arima, the modeltime package will tune a SARIMA model for us:
+```{r}
+sarima_model <- arima_reg() %>%
+  set_engine("auto_arima") %>%
+  set_mode("regression") %>%
+  fit(electricity ~ date, training(splits))
+```
+
+a) Check out the results of the sarima_model below. The ARIMA(p, d, q)(P, D, Q)[S] output reports the orders of the “pure” and seasonal model components:
+
+    p = order of the pure AR model
+    d = degree of differencing (which you can research online but, in general, addresses linear trends in the time series)
+    q = order of the pure MA model
+    P = order of the seasonal AR model
+    D = degree of seasonal differencing
+    Q = order of the seasonal MA model
+    S = order of the seasonality (in number of months here)
+
+Identify and reflect upon the orders identified by the auto_arima function for our electricity data.
+```{r}
+sarima_model
+```
+
+b) Check out a plot of this particular SARIMA model (red dash) versus the observed data (black). How well does the model capture the data? Does it do better than the MA(1) and AR(3) models we explored earlier?
+```{r}
+sarima_model %>%
+  pluck("fit") %>%
+  pluck("data") %>%
+  ggplot(aes(x = date, y = .actual)) +
+    geom_line() +
+    geom_line(aes(x = date, y = .fitted), color = "red", linetype = "dashed")
+```
+
+13. Forecasts
+A common goal in time series modeling is to utilize the past to predict the future. Let’s do it! Let’s use our sarima_model, which we built using data from 2010–2017, to predict energy usage in 2018. Run and reflect upon the code and output of each chunk below.
+```{r}
+# Calibrate the model to the testing data
+calibration_table <- sarima_model %>%
+  modeltime_table() %>%
+  modeltime_calibrate(new_data = testing(splits))
+
+# Calculate forecasts for the testing data
+electricity_forecasts <- calibration_table %>% 
+  modeltime_forecast(
+    new_data    = testing(splits),
+    actual_data = uk_monthly_data
+  ) 
+
+# Check out the forecasts
+# What do .index, .value, .conf_lo, and .conf_hi give us?!
+electricity_forecasts %>% 
+  filter(.key == "prediction")
+```
+```{r}
+# Plot the forecasts vs observed test values along with...
+# the past time series data and confidence bands
+electricity_forecasts %>%
+  plot_modeltime_forecast(.legend_show = FALSE)
+```
+```{r}
+# Plot the forecasts vs observed test values alone
+sarima_model %>%
+  augment(new_data = testing(splits)) %>%
+  ggplot(aes(x = date, y = electricity)) +
+    geom_line() +
+    geom_line(aes(x = date, y = .pred), color = "red")
+```
+
+14. Evaluating the forecasts
+Finally, calculate and interpret the MAE for the 2018 forecasts:
+```{r}
+calibration_table %>%
+  modeltime_accuracy() %>%
+  table_modeltime_accuracy()
+```
+
+14.5 Extra examples
+Below are some additional time series data sets that you can play around with, building and evaluating SARIMA models for any number of them.
+```{r}
+# Stock prices
+# Resource: https://rpubs.com/markloessi/495609
+library(quantmod)
+library(lubridate)
+symbolBasket <- c('AAPL', 'AMZN', 'BRK-B', 'SPY')
+getSymbols(symbolBasket , src = 'yahoo')
+stocks <- as.data.frame(`BRK-B`) %>%
+  rownames_to_column("date") %>%
+  rename(price = "BRK-B.Open") %>%
+  dplyr::select(date, price) %>%
+  mutate(date = as.Date(date))
+stocks %>%
+  plot_time_series(date, price)
+
+# Airline passengers
+# Fix the nonstationary variance across time using a log transform
+library(timetk)
+data("AirPassengers")
+air <- tk_tbl(AirPassengers) %>%
+  as.data.frame() %>%
+  mutate(log_value = log(value),
+         date = as.Date(index))
+air %>%
+  plot_time_series(date, value)
+air %>%
+  plot_time_series(date, log_value)
+
+# bikeshare ridership
+library(quantmod)
+library(lubridate)
+bikes <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/bike_share.csv") %>%
+  mutate(date = as.Date(date, format = "%m/%d/%y")) %>%
+  rename(rides = riders_registered)
+bikes %>%
+  plot_time_series(date, rides)
+
+# temperature data:
+library(dendroTools)
+data("swit272_daily_temperatures")
+temps <- swit272_daily_temperatures %>%
+  mutate(date = as.Date(as.character(date)),
+         year = year(date)) %>%
+  filter(year >= 2015)
+temps %>%
+  plot_time_series(date, t_avg)
+
+# unemployment rates
+library(astsa)
+data(UnempRate)
+labor <- UnempRate %>%
+  tk_tbl() %>%
+  rename(unemployment = value, date = index) %>%
+  mutate(date = as.Date(date)) %>%
+  filter(year(date) >= 1990)
+labor %>%
+  plot_time_series(date, unemployment)
+```
+
+14. 6 Solutions
+
+1. White noise
+The data appear random with no discernible pattern.
+
+2. ACF plots
+a) r0 is the correlation betwee yt and itself: yt−0. An observation yt
+is perfectly correlated with itself.
+b) nope
+c) nope
+
+3. AR(1) example
+a) There is evidence of the dependence from one time point to the next.
+b) 
+
+    shape: There’s exponential decay in the autocorrelations.
+    r1=0.95. that is the AR(1) coefficient is equivalent to the lag-1 autocorrelation
+    yes, yes, no
+    
+4. PACF plots
+a) no discernible shape
+b) the lag 1 partial correlation equals 0.95, the same as the lag 1 correlation. This makes sense since there are no observations between yt
+and yt−1 for which to control
+c) just lag 1. That is the meaning of the AR(1) model. yt
+only depends directly upon yt−1: yt=c+ϕ1yt−1.
+
+5. More AR models
+a) The time series plot exhibits less dependence from time point to time point (or more wiggle). The autocorrelations in the ACF demonstrate a quicker exponential decay, i.e. the correlation fades quicker as the lags increase. And the PACF still only has a significant spike at lag 1.
+
+b) Repeat part a for an AR(1) model with a negative coefficient, ϕ1=−0.9. (What do you expect before you do?)
+
+c) The biggest difference I notice is that the PACF has significant spikes at the first 2 lags (as we’d expect for an AR(2) model).
+
+6. MA(1) example
+a) The dependence from time point to time point is, for me, less apparent (since yt is related to shocks εt−1, not yt−1).
+
+b) For the MA(1), the ACF has a significant spike at lag 1. Thus yt significantly depends upon yt−1 (though εt−1) but not the y values beyond the first lag.
+
+c) For the MA(1), the PACF exhibits exponential decay. Thus, through the shocks ε, yt significantly depends upon several past outcomes yt−k when controlling for the outcomes in between.
+
+8. ARMA(1,1)
+To me, the plots for the ARMA(1, 1) model appear more similar to those of the MA(1). It’s pretty tough to graphically distinguish between ARMA vs MA or AR!
+
+9. Tidy ACF and PACF
+a) Yes, there is clear evidence of dependence (significant spikes in autocorrelation and partial autocorrelation). Thus linear regression wouldn’t be appropriate.
+b) Personally, no.
+
+10. MA(1)
+a) ^theta1=0.5765 and ^c=49.1798
+b) Each new outcome yt is predicted from the previous forecast error εt−1, not the previous outcome yt−1.
+
+11. AR(3)
+
+    the AR(3) model does better than the MA(1) at picking up the downward trend
+    the model predictions seem to be systematically shifted
+
+12. SARIMA
+a) The pure time series can be modeled by an ARMA(1,0). The seasonal time series can be modeled using a 12-month cycle with ARIMA(2,1,0) (where 1 is the differencing order).
+b) This model does a great job at capturing the behavior of past energy usage, better than the MA(1) and AR(3).
+
+14. Evaluating the forecasts
+On average, the monthly energy usage forecasts for 2018 are off by 0.96 million MW.

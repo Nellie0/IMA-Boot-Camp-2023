@@ -1,0 +1,131 @@
+---
+title: "Homework 4: Hypothesis testing"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+date: "2023-08-25"
+---
+10.2 For fun and practice: Simpson's Paradox
+
+The data set
+```{r}
+diam <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/Diamonds.csv")
+```
+contains data on price, carat (size), color, and clarity of 308 diamonds. We want to explore the association between clarity & price. Clarity is classified as follows (in order from best to worst):
+
+Clarity 	Description
+IF 	      internally flawless (no internal imperfections)
+VVS1 	    very very slightly imperfect
+VVS2 	
+VS1 	    very slightly imperfect
+VS2
+
+Before answering the questions below, think about what relationships you’d expect to see among these variables!
+
+2. price vs clarity
+Consider the relationship between price and clarity
+
+a) Construct & describe a plot of the relationship between price and clarity.
+
+b) Construct a sample estimate of the model of price by clarity.
+
+c) Which clarity has the highest predicted value (and what is this value)? Which clarity has the lowest predicted value (and what is this value)? Why are these results surprising? HINT: Don’t forget about the reference level.
+
+d) Examine the p-values for each coefficient in the model. What do you conclude?
+
+3. Confounding variable
+The surprising results above can be explained by a confounding variable: carat.
+
+a) Construct & describe a visualization of the relationship between price, clarity, and carat.
+    
+b) Fit the model of price ~ clarity + carat.
+
+c) Interpret every coefficient, predict the price of a 0.5 carat VVS2 diamond, and write out a model of price by carat for the VVS2 group.
+
+d) When controlling for carat, which clarity has the highest expected price? Which has the lowest expected price?
+
+4. Simpson's paradox
+The models with & without carat lead to different conclusions about the relationship between price and clarity. This is called a Simpson’s Paradox. Explain why this happened. Construct a graphic to back you up.
+
+10.3 Advanced visualization: Part 1
+
+The rides data below is a subset of just 40,000 of the >1,000,000 rides taken using the Twin Cities NiceRide bikeshare service in 2016. WARNING: Expect RStudio to run a bit slowly in this section. It’s the biggest data set we’ve worked with.
+```{r}
+rides <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/NiceRide2016sub.csv")
+dim(rides)
+head(rides, 3)
+```
+A quick codebook:
+
+    Start.date = time/date at which the bike rental began
+    Start.station = where the bike was picked up
+    End.date = time/date at which the bike rental ended
+    End.station = where the bike was dropped off
+    Total.duration..seconds. = duration of the rental/ride in seconds
+    Account.type = whether the rider is a NiceRide member or just a casual rider
+
+5. Let's clean up this data
+Try to do the following in 1 continuous series of pipes %>%
+
+    Rename “Total.duration..seconds.” as “duration” (or just add a new variable called duration).
+    Keep only the Start.date, Start.station, End.station, duration, and Account.type variables.
+    Keep only the rides that lasted > 0 seconds.
+    Currently, the Start.date is a factor variable:
+```{r}
+class(rides$Start.date)
+```
+Create 2 variables from this infomation, a variable hours that pulls the hour and a factor variable months that pulls the month. The following will come in handy:
+```{r}
+library(lubridate)
+mydate <- as.factor(c("10/26/2016 13:20"))
+as.factor(hour(mdy_hm(mydate)))
+as.factor(month(mdy_hm(mydate)))
+```
+
+6. Duration vs Month
+a) Construct a visualization of the relationship between a ride’s log(duration) and the month in which the ride took place. NOTE: be sure that months is a factor/categorical variable!
+
+b) Construct a model of log(duration) by month. Interpret the estimated difference in the typical duration of rides in April and May on the non-logged scale. Is the difference practically significant?
+
+c) Is the difference statistically discernible?
+
+7. Play Around!
+There are a lot of other features of the NiceRide data!
+
+a) Merge the rides with the locations of the stations:
+```{r}
+stations <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/NiceRideStations.csv")
+
+# Join the stations and rides    
+merged_rides <- rides %>%
+  left_join(stations, by = c(Start.station = "Station")) %>%
+  rename(start_lat = Latitude, start_long = Longitude) %>%
+  left_join(stations, by = c(End.station = "Station")) %>%
+  rename(end_lat = Latitude, end_long = Longitude)
+```
+
+b) Plot a map of the Nicerides around Minneapolis:
+```{r}
+MN <- get_stamenmap(
+  c(-93.375,44.86,-93.05,45.04),
+  zoom = 14,
+  maptype = "terrain")
+ggmap(MN) + 
+    geom_segment(data = merged_rides, aes(x = start_long, y = start_lat,
+    xend = end_long, yend = end_lat), alpha = 0.07)
+```
+
+c) Do the route distributions/choice differ by membership status? Construct a visualization.
+
+d) How if at all does duration change by time of day? By time of day and membership status?
+
+e) What other questions might we ask? Play around and see if you have any insight to add about riding patterns.
+
+10.4 Solutions
+
+2. price vs clarity
+
+4. Simpsons paradox
+IF diamonds tend to be small (the bigger the diamond the more room for flaws) and small diamonds get less money.

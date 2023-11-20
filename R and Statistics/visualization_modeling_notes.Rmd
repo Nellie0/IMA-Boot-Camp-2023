@@ -1,0 +1,920 @@
+---
+title: Visualizing & modeling variability
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+    #Puts floating navigation
+---
+
+
+```{r message = FALSE, warning = FALSE}
+# Load some packages you'll use in today's activity
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(tidymodels)
+
+# Set a more color-blind friendly palette for ggplot
+palette(c("#000000", "#56B4E9", "#E69F00", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7"))
+scale_colour_discrete <- function(...) scale_colour_manual(values = palette())
+scale_fill_discrete <- function(...) scale_fill_manual(values = palette())
+```
+
+
+
+# Pre-bootcamp review 
+
+**Statistics** is the practice of using *sample data* to learn and make inferences about some broader population of interest. Pre-bootcamp, you explored the first steps of this process: familiarizing yourself with your data, including univariate analysis. Let's review.
+
+
+The `bikes` dataset, made available on the UCI Machine Learning Repository^[Dua, D. and Graff, C. (2017). UCI Machine Learning Repository. http://archive.ics.
+uci.edu/ml.] by Fanaee-T and Gama (2013)^[Fanaee-T, H. and Gama, J. (2013). Event labeling combining ensemble detectors and back-
+ground knowledge. Progress in Artificial Intelligence, pages 1–15.] includes a sample of data on the _Capital Bikeshare_ service in Washington, D.C.. We'll use this sample data to learn about the general ridership patterns.
+
+
+
+```{r}
+# Import and peak at the data
+bikes <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/bike_share.csv") %>% 
+  rename(rides = riders_registered)
+```
+
+The following is a partial **codebook** or **data dictionary** for this data:
+
+#Single quotation marks highlight, and can create a table using these dashes.
+
+variable              meaning
+--------------------- ----------------------------------------------------
+`season`              winter, spring, summer, or fall
+`day_of_week`         3-letter abbreviation for day of week
+`weekend`             TRUE if the case is a weekend, FALSE otherwise
+`holiday`             is the day a holiday? (yes or no)
+`temp_feel`           what the temperature *feels* like in degrees Fahrenheit
+`humidity`            fraction from 0 to 1 giving the humidity level
+`windspeed`           wind speed in miles per hour
+`weather_cat`         `categ1`: clear to partly cloudy <br> `categ2`: mist + some clouds <br> `categ3`: light precipitation to thunderstorms
+`rides`               count of daily rides by registered users
+
+
+\
+\
+
+
+
+
+## Exercise 1: Explore the structure of the data
+
+```{r}
+# Check out the first rows of bikes (do this in 2 ways!)
+# What are the units of observation? The variables?   
+head(bikes)
+#Can also look manually at the file by going to Environment then choosing "bikes"
+
+# How much data do we have?
+dim(bikes)
+nrow(bikes)
+ncol(bikes)
+
+# What are the variable names?
+names(bikes)
+
+```
+    
+
+
+\
+
+
+
+
+
+## Exercise 2: Explore `weather_cat` (categorical)    
+
+Notice the `eval = FALSE` syntax in your Rmd. When you knit the Rmd, it does *not* evaluate this chunk (if it did, you'd get an error). Do not modify this first chunk. Instead, copy and complete this code in the empty chunk below.
+    
+```{r eval = FALSE}
+# Blank canvas
+ggplot(___, aes(___))
+    
+# Bar chart    
+ggplot(___, aes(___)) + 
+  geom____()
+```
+
+```{r}
+#categorical data could be good for bar graphs
+ggplot(bikes, aes(x=weather_cat)) +
+  geom_bar()
+```
+    
+
+
+
+
+\
+
+
+
+
+## Exercise 3: Explore `rides` (quantitative)    
+
+(Remember to use the empty chunk below.)
+
+```{r eval = FALSE}
+# Histogram
+ggplot(___, aes(x = ___)) + 
+  geom____()
+
+# Density plot
+ggplot(___, aes(x = ___)) + 
+  geom____()
+```
+
+```{r}
+#Quantitative data could be good for histograms or density plots
+#Histogram, default bins is 30. Mess with either bins or bins_width, kind of depends on data.
+ggplot(bikes, aes(x = rides)) + 
+  geom_histogram()
+
+#Density plot, smooth version of histogram, basically a pdf
+ggplot(bikes, aes(x=rides))+
+  geom_density()
+```
+
+
+
+
+\
+
+
+
+
+## Exercise 4: Numerical summaries
+
+Numerically summarize the typical number of riders & the variability in ridership from day to day. 
+
+```{r eval = FALSE}
+# Mean & median ridership
+___ %>% 
+  ___(___(rides), ___(rides))
+
+# Variance & st dev in ridership
+___ %>% 
+  ___(___(rides), ___(rides))
+```
+
+
+```{r}
+# Mean & median ridership
+#data is pretty symmetric, so our mean and median is similar
+bikes %>% 
+  summarize(mean(rides), median(rides))
+
+#Same thing, also it's called the pike (or pipe?) function
+head(bikes)
+bikes %>%
+  head()
+
+# Variance & st dev in ridership
+bikes %>% 
+  summarize(var(rides), sd(rides))
+```
+
+
+
+
+
+
+\
+\
+\
+\
+
+
+
+
+
+# Visualizing relationships
+
+Our analysis above begs some follow-up questions: What factors might _explain_ some of the variability in ridership from day to day? For example, how might ridership be related to factors such as the weather and day of the week? To this end, statistical models illuminate **relationships** between a response variable and one or more predictors:
+
+- **response variable**    
+    The variable whose variability we would like to explain or predict (eg: bike ridership).
+    
+
+- **predictors**    
+    The variable(s) that might explain some of the variability in the response. (eg: temperature, windspeed, day of week, etc)
+    
+
+*Before* building any models, **visualizations** can provide important context. Let's do the next exercise together.
+
+
+\
+\
+
+
+
+
+## Exercise 5: Sketches
+
+Instead of memorizing which plot is appropriate for which situation, it's best to recognize _patterns_ in constructing viz. For example, how might we visualize the relationships among the following pairs of variables?
+    
+```{r}
+bikes %>% 
+  select(rides, temp_feel, windspeed, weekend) %>% 
+  head()
+```
+
+a. `rides` vs `temp_feel`
+
+Can draw up a scatter plot, x=temp_feel, y=rides
+
+b. `rides` vs `weekend`
+
+This is a bit harder. Can try a density plot with x=rides and another density plot with x=weekend on top of each other.
+
+c. `rides` vs `temp_feel` *and* `weekend`
+
+
+d. `rides` vs `temp_feel` *and* `windspeed`
+
+
+
+
+\
+\
+
+
+
+**In breakout rooms,** complete exercises 6--11.
+
+
+\
+\
+
+
+## Pre-exercise exercise
+
+This is your first chance to work together. Introduce yourselves! What are you currently working on? What do you enjoy doing in your time outside school / work?
+
+
+
+\
+\
+
+
+
+
+
+## Exercise 6: Scatterplots of 2 quantitative variables
+
+To visualize the relationship between ridership and temperature, two quantitative variables, we can build a scatterplot. To this end, run and make comments on each separate chunk below. By default, note that the response variable ($Y$) goes on the y-axis and the predictor ($X$) goes on the x-axis.    
+
+```{r}
+# Blank canvas
+ggplot(bikes, aes(y = rides, x = temp_feel))
+```
+
+```{r}
+# Scatter plot
+ggplot(bikes, aes(y = rides, x = temp_feel)) + 
+  geom_point()
+```
+
+```{r}
+# Practice: make a scatterplot of rides vs windspeed
+ggplot(bikes,aes(y=rides,x=windspeed))+
+  geom_point()
+```
+
+
+**Reflection:**
+
+*In the bikeshare context*, comment on the relationship and the *strength* of the relationship between ridership and temperature.
+    
+Positively correlated, but we begin to see less riders when it gets over 100 degrees.  
+   
+\
+\
+
+
+
+
+
+
+## Exercise 7: Side-by-side plots of 1 quantitative variable vs 1 categorical variable
+
+Run and comment on each chunk below to construct side-by-side plots which visualize the relationship between ridership and weekend status.       
+    
+```{r}
+#Light blue is biking on the weekend, dark blue is not on weekend. 
+ggplot(bikes, aes(x = rides, fill = weekend)) + 
+  geom_density()
+```
+
+```{r}
+#Adds transparency, also changes colors to be more noticeable
+ggplot(bikes, aes(x = rides, fill = weekend)) + 
+  geom_density(alpha = 0.5)
+```
+
+```{r}
+# Practice: construct side-by-side BOXplots of rides by weekend
+# Make sure that rides is on the y-axis
+ggplot(bikes,aes(x=weekend,y=rides))+
+  geom_boxplot()
+
+# Practice: construct side-by-side VIOLIN plots of rides by weekend
+# Make sure that rides is on the y-axis
+ggplot(bikes,aes(x=weekend,y=rides))+
+  geom_violin()
+
+
+# Practice: construct side-by-side density plots of rides by SEASON
+# Make sure that rides is on the y-axis
+ggplot(bikes,aes(x=rides,fill=season))+
+  geom_density(alpha=0.5)
+
+```
+   
+
+**Reflection:**    
+    
+*In the bikeshare context*, comment on the relationship and the *strength* of the relationship between ridership and weekend status.
+    
+There are less riders on the weekends. The plots aren't the most clear for the data.     
+    
+\
+\
+
+
+
+
+
+
+
+## Exercise 8: Scatterplots of 1 quantitative variable vs 1 categorical & 1 quantitative variable
+
+If `temp_feel` and `weekend` both explain some of the variability in `rides`, why not include both in our analysis?!  Let's.
+
+```{r eval = FALSE}
+# 
+ggplot(bikes, aes(y = ___, x = ___, color = ___)) + 
+  geom___()
+```
+
+```{r}
+# True/False Scatterplot, where true is dependent on weekend, and x-axis is temperature.
+ggplot(bikes, aes(y = rides, x = temp_feel, color = weekend)) + 
+  geom_point()
+```
+    
+
+**Reflection:**    
+    
+*In the bikeshare context*, comment on the relationship and the *strength* of the relationship of ridership with temperature and weekend status.
+
+Above 6000 is mostly false, so not on weekends. Most riders are not on the weekends and between 80-100 degrees.
+
+
+
+\
+\
+
+
+
+
+## Exercise 9: Plots of 3 quantitative variables
+
+Think back to our sketches. How might we include information about windspeed in these plots?
+
+```{r eval = FALSE}
+# 
+ggplot(bikes, aes(y = rides, x = temp_feel, ___ = windspeed)) + 
+  geom_point()
+
+# 
+ggplot(bikes, aes(y = rides, x = temp_feel, ___ = windspeed)) + 
+  geom_point()
+```
+
+```{r}
+# 
+ggplot(bikes, aes(y = rides, x = temp_feel, color = windspeed)) + 
+  geom_point()
+    
+# 
+ggplot(bikes, aes(y = rides, x = temp_feel, color = windspeed,size=windspeed)) + 
+  geom_point(alpha=0.5)
+```
+
+
+**Reflection:**
+
+
+
+
+
+    
+\
+\
+
+
+
+
+
+## Exercise 10: Reflection
+    
+In the above exercises you should notice the following patterns for visualizing relationships. Feel free to jot down any other observations you have!    
+
+- Each quantitative variable requires a new axis.  If we run out of axes, we can illustrate the scale of a quantitative variable using color or discretize it into groups & treat it as categorical.    
+- Each categorical variable requires a new way to "group" the graphic (eg: using colors, shapes, separate facets, etc to capture the grouping)
+
+
+\
+\
+
+
+
+
+## Exercise 11: Take a break    
+
+When your entire group is finished, please return to the main room.
+
+
+
+
+\
+\
+\
+\
+
+
+
+
+
+# Linear regression models 
+
+Just as when exploring single variables, there are limitations in relying solely on visualizations to analyze relationships among 2+ variables.
+**Statistical models** provide rigorous numerical summaries of relationship trends.
+
+Linear as in y is a linear combination of x's.
+
+\
+\
+
+
+
+**Example**    
+Before going into details, in each plot below, consider how we'd draw a model that captures the relationship between $Y$ and $X$.
+
+
+```{r}
+ggplot(bikes, aes(y = rides, x = windspeed)) + 
+  geom_point()
+```
+
+```{r}
+ggplot(bikes, aes(y = rides, x = weekend)) + 
+  geom_boxplot()
+```
+
+```{r}
+ggplot(bikes, aes(y = rides, x = windspeed, color = weekend)) + 
+  geom_point(size = 0.8)
+```
+
+```{r}
+ggplot(bikes, aes(y = rides, size = temp_feel, x = windspeed, color = temp_feel)) + 
+  geom_violin(alpha = 0.5)
+```
+
+
+\
+\
+\
+
+
+**Linear regression** can be used to model each of these relationships.
+A "linear" regression model of $Y$ is a *linear combination* of predictors $X$ -- it's not necessarily the case that the relationship itself is linear!!
+In general, let $Y$ be our response variable and $X = (X_1, X_2, ..., X_p)$ be a set of $p$ predictors.
+Then the (population) linear regression model of $Y$ vs $X$ is
+
+$$Y = \beta_0 + \beta_1 X_1 + \beta_2 X_2 + \cdots + \beta_p X_p + \varepsilon$$
+
+where 
+
+- $\beta_0 + \beta_1 X_1 + \beta_2 X_2 + \cdots + \beta_p X_p$ describes the *typical* or *expected* outcome of $Y$ at a set of predictors $X$
+
+- $\varepsilon$ captures individual **deviations** from the expected outcome, i.e. **residuals**
+
+- $\beta_0$ = **intercept coefficient**    
+    $\beta_0$ is the average $Y$ value when $X_1 = X_2 = \cdots = X_p = 0$
+
+- $\beta_i$ = $X_i$ **coefficient**    
+    *when holding constant all other $X_j$*, $\beta_i$ is the change in $Y$ when we increase $X_i$ by 1    
+    
+    
+\
+
+
+**NOTE:**
+
+We can't actually *know* the exact "population" relationship between $Y$ and $X$, hence the coefficients $\beta$. We'll use sample data to *estimate* the model coefficients.
+
+
+\
+\
+\
+
+
+
+**UP NEXT**
+
+- Today we'll focus on visualizing, constructing, and interpreting models. We'll talk more tomorrow about model quality.
+
+- To construct our linear regression models, we'll use the `tidymodels` package (part of the **tidyverse**) instead of built-in "base R" functions. The syntax is longer, but its grammar is more generalizeable to (1) the construction of a wider range of machine learning models that you might come across outside this workshop; and (2) model *evaluation*.
+
+- **IMPORTANT:** Be sure to interpret your model results in the *context*  of our analysis, don't provide general definitions.
+
+
+
+\
+
+
+
+
+
+
+
+## Exercise 12: 1 quantitative predictor    
+
+First, visualize the relationship of `rides` with `windspeed`:    
+
+```{r}
+# Visualization, lm means linear model I think
+ggplot(bikes, aes(x = windspeed, y = rides)) + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+```
+
+Next, run & examine each chunk below to estimate the linear regression model of this relationship:
+
+```{r}
+# STEP 1. Create our model / method "specification"
+# That is, "specify" that...
+# - we want to build a linear regression model (y = b0 + b1*x1 + b2*x2)
+# - this is "regression", i.e. y is quantitative
+# - we want to estimate this model using the lm "engine" / R function
+lm_spec <- linear_reg() %>%
+  set_mode("regression") %>% 
+  set_engine("lm")
+
+# The above code doesn't yet build any model (we didn't even give it any data!)
+# It just specifies what kind of model we want to run
+lm_spec
+```
+
+```{r}
+# STEP 2. Use the specified method to estimate or "fit" 
+# the model of ridership by windspeed 
+model_1 <- lm_spec %>%
+  fit(rides ~ windspeed, data = bikes)
+```
+
+```{r}
+# STEP 3: Check out the results
+model_1
+```
+
+
+### Part a
+
+Write out the estimated relationship and interpret both coefficients: rides = 4490.10 + (-65.34) windspeed
+Intercept is just where we start, windspeed coefficient is negative since the higher the wind is, the less riders.
+
+
+### Part b
+
+Use the model from part b to **predict** ridership for a day with 5pmh winds. Repeat for 30mph winds. Use the chunk below to make your calculations.
+
+```{r}
+4490.10+(-65.34)*5
+4490.10+(-65.34)*30
+```
+Ridership at 5mph winds is 4163.4.
+Ridership at 30pm winds is 2529.9.
+
+
+### Part c
+
+Check your work to part b using a shortcut function in R:    
+
+```{r}
+# Define the new days of interest
+new_day <- data.frame(windspeed = c(5, 30))
+new_day
+```
+
+```{r}
+# Make predictions
+model_1 %>% 
+  predict(new_data = new_day)
+```
+    
+
+    
+    
+
+\ 
+
+
+
+
+## Exercise 13: 1 categorical predictor
+
+Next, consider the relationship between `rides` and `weekend`, a categorical predictor:
+
+```{r}
+# Visualize the relationship
+ggplot(bikes, aes(y = rides, x = weekend)) + 
+  geom_boxplot()
+```
+
+
+### Part a
+
+Model the relationship between these 2 variables.
+
+```{r eval = FALSE}    
+# STEP 1: We've already specified the method
+
+# STEP 2. Use the specified method to estimate or "fit" 
+# the model of ridership by weekend status 
+model_2 <- lm_spec %>%
+  fit(rides~weekend, data = bikes)
+
+# STEP 3: Check out the results
+model_2
+```
+    
+```{r}
+    
+```
+        
+### Part b
+
+Write out the estimated model formula.
+
+rides=3925.5-937.6*weekend
+
+
+
+### Part c
+
+Huh?! R splits categorical predictors up into a reference / baseline group (the first alphabetically) and _indicators_ for the other groups. Here, weekdays (`weekend = FALSE`) are the reference group and   
+    
+$$\text{weekendTRUE} = \begin{cases} 1 & \text{ if weekend} \\ 0 & \text{ otherwise} \\ \end{cases}$$
+
+With this in mind, use this model to predict ridership on weekdays, and ridership in weekends. HINT: Plug in 0s and 1s to obtain 2 separate models for weekends and weekdays.
+
+```{r}
+# Do the prediction "by hand"
+3925.5-937.6*1
+3925.5-937.6*0
+```
+
+```{r eval = FALSE}
+# Check your work
+model_2 %>% 
+  predict(new_data = data.frame(weekend = TRUE))
+model_2 %>% 
+  predict(new_data = data.frame(weekend = FALSE))
+```
+
+
+
+### Part d
+
+Reflecting on part c, interpret the two model coefficients.
+
+
+intercept=number of riders regardless of weekday. weekend coefficient is how much it changes depending on weekday or weekend.
+
+\        
+
+
+
+ 
+## Exercise 14: 1 quantitative & 1 categorical predictor
+
+Next, consider the relationship of `rides` with `windspeed` (quantitative) *and* `weekend` (categorical):
+
+```{r}
+ggplot(bikes, aes(x = windspeed, y = rides, color = weekend)) + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+```
+
+
+### Part a
+
+Build the model of this relationship.    
+
+```{r eval = FALSE}
+# STEP 1: We've already specified the method
+
+# STEP 2. Use the specified method to estimate or "fit" 
+# the model of ridership by windspeed & weekend 
+model_3 <- lm_spec %>%
+  fit(rides ~ windspeed + weekend, data = bikes)
+
+# STEP 3: Check out the results
+model_3
+```
+    
+
+### Part b
+
+Interpret all model coefficients. These interpretations will differ from those in `model_1` and `model_2` -- coefficients are interpreted depending upon what other predictors are in the model. HINT:    
+
+- First write out the estimated model formula:    
+  
+  rides = 4738.38 + (-63.97) windspeed + (-925.16) weekendTRUE
+        
+- Then, notice that the presence of a categorical variable results in the separation of the model formula by group. To this end, plug in 0s and 1s to obtain *2 separate model formulas* for weekdays and weekends:    
+  
+  weekdays: rides = 4738.38 + (-63.97) windspeed       
+  
+  weekends: rides = 3813.22 + (-63.97) windspeed  
+
+```{r}
+4738.38-925.16
+```
+
+
+\
+\
+
+
+
+
+## Exercise 15: 2 quantitative predictors    
+
+Now, try filling in more of the blanks on your own.    
+    
+### Part a
+
+Visualize & construct a model of the relationship of `rides` with `temp_feel` and `windspeed`.    
+
+```{r}
+# Visualize
+ggplot(bikes,aes(y=rides,x=temp_feel,color=windspeed))+
+  geom_point()+
+  geom_smooth(method="lm")
+# Model (model_4)
+model_4 <- lm_spec %>%
+  fit(rides~temp_feel+windspeed,data=bikes)
+model_4
+```
+
+
+
+### Part b
+
+If you were to *draw* this model, what would it look like?
+
+3D, z=rides, up=temp_feel, down_windspeed
+
+### Part c
+
+Interpret the `temp_feel` coefficient.  
+
+If we hold windspeed constant, the rides increase as the temp_feel increases by a factor of 55.52.
+
+
+\ 
+
+
+
+
+
+
+## Exercise 16: 2 categorical predictors    
+
+### Part a
+
+Visualize the relationship of `rides` with `weekend` and `weather_cat`. HINT: Start with side-by-side boxplots of `rides` vs `weekend`, then incorporate `weather_cat` on that plot.
+
+```{r}
+ggplot(bikes,aes(y=rides,x=weekend,color=weather_cat))+
+  geom_boxplot()
+```
+
+    
+### Part b
+
+Construct the model & interpret all coefficients.    
+
+```{r}
+model_5 <- lm_spec %>%
+  fit(rides ~ weekend + weather_cat, data = bikes)
+model_5
+```
+        
+Category one does not have a coefficient, I think it's considered the default. Intercept is the amount of riders without being on weekend and having category one.
+
+
+### Part c
+
+How many possible combinations are there of these two predictors? Which combination has the highest predicted `rides` (and what is this prediction)? The lowest?
+
+There are 6 combinations. 3 different categories, and either weekends or weekdays.
+
+```{r}
+# Highest predicted ridership
+4211.9
+# Lowest predicted ridership
+4211.9-982.2-608.9-2360.2
+```
+
+
+\
+\
+
+
+
+## Exercise 17: More than 2 predictors
+
+Though the model gets tough to visualize, we can have *more* than 2 predictors in a model. Check out and interpret the following model. What do you think about the combination of predictors?    
+
+```{r}
+model_6 <- lm_spec %>%
+  fit(rides ~ weekend + weather_cat + temp_feel + windspeed + humidity + holiday, data = bikes)
+model_6
+```
+We start with a negative intercept, which might give us a negative number of riders.
+
+
+\
+\
+
+
+## Exercise 18: Optional -- looking ahead
+
+Tomorrow, we'll explore how to *evaluate*, hence *compare* statistical models. For example, suppose you wanted to build a model that best predicts ridership, and can only pick 1 predictor. Based on the plots below, would you pick `temp_feel`, `windspeed`, or `weekend`? Why? Can you develop a numerical measurement that would support your argument?
+
+```{r}
+ggplot(bikes, aes(y = rides, x = temp_feel)) + 
+  geom_point()
+ggplot(bikes, aes(y = rides, x = windspeed)) + 
+  geom_point()
+ggplot(bikes, aes(y = rides, x = weekend)) + 
+  geom_boxplot()
+```
+I would choose temp_feel since that has a very noticeable positive orientation, and would be easy to predict with. Another good predictor to choose is windspeed. The worst is weekends.
+\
+\
+\
+\
+
+
+
+# Wrapping up
+
+There are a couple of options if you finish early.    
+
+- Start Homework 1. You should attempt to complete this homework before we meet again tomorrow.    
+
+- Play around with some penguins data that you'll see in the homework...
+
+
+```{r}
+# Load the package and penguins data
+library(palmerpenguins)
+data(penguins)
+```
+
+```{r eval = FALSE}
+# IN YOUR CONSOLE: check out the "codebook"
+?penguins
+```
+
+
+Play around! Here are some questions to think about. Build some visualizations and models that help us learn about the following:
+
+
+- how the length of a penguin's bill relates to its flipper length
+- how the length of a penguin's bill relates to its species
+- how the length of a penguin's bill relates to both its flipper length and species
+- how the length of a penguin's bill relates to both its flipper length and body mass
+
+
+
+
+\
+\
+\
+\

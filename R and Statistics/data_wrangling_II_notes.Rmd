@@ -1,0 +1,226 @@
+---
+title: "Data wrangling II -- reshaping / pivoting"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+---
+
+
+```{r warning = FALSE, message = FALSE}
+# Load some packages
+library(dplyr)
+library(tidyr)
+library(readr)
+```
+
+
+\
+
+
+Additional reading: [Pivoting vignette by tidyr](https://tidyr.tidyverse.org/articles/pivot.html)
+
+
+\
+
+
+We've been working with **tidy** data -- each row represents a unit of observation and the columns match the variables on these units. Tidy data is important to packages in the `tidyverse` (like `ggplot2` and `dplyr`). But not all data is tidy.
+
+Consider data on a sleep study in which subjects were restricted to 3 hours of sleep per night. On each day, their reaction time to a stimulus (in ms) was recorded.^[Gregory Belenky, Nancy J. Wesensten, David R. Thorne, Maria L. Thomas, Helen C. Sing, Daniel P. Redmond, Michael B. Russo and Thomas J. Balkin (2003) Patterns of performance degradation and restoration during sleep restriction and subsequent recovery: a sleep dose-response study. Journal of Sleep Research 12, 1–12.]
+
+```{r}
+sleep_wide <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/sleep_wide.csv")
+
+head(sleep_wide)
+```
+
+Suppose I ask you to plot each subject's reaction time (y-axis) vs the number of days of sleep deprivation (x-axis). There's a problem. Unlike the tidy data we've worked with in the past, this data has a **wide** format -- instead of each row representing a *single observation / experimental outcome* with columns representing the *variables* of the experiment, each row represents a variable and each column some values of that variable.
+
+\
+\
+
+
+
+
+## Exercise 1: Make the data longer
+
+We can reshape the data into a **long** format, with more rows and fewer columns, using the `pivot_longer()` function in the `tidyr` package. This function requires a few pieces of information.
+
+- We want to convert the current column names (days) to a new "day" column (`names_to = "day"`)
+
+- We want to convert the current values in both rows to a new "reaction_time" column (`values_to = "reaction_time"`).
+
+- We want to continue labeling the outcomes by their `subject` values, thus don't want to pivot that variable. We leave this out by `cols = !Subject`.  
+
+
+Run this chunk and review the results. Note how the values are recorded in the `day` column:        
+
+```{r}
+sleep_wide %>%
+  pivot_longer(cols = !Subject,
+               names_to = "day",
+               values_to = "reaction_time")
+```
+
+Run this chunk and review the results. What changed in the code and how did this impact how the values are recorded in the `day` column?
+
+```{r}
+sleep_wide %>%
+  pivot_longer(cols = !Subject,
+               names_to = "day",
+               names_prefix = "day_",
+               values_to = "reaction_time")
+```
+
+```{r}
+# Now store this new data. 
+# Make day numeric (not character)
+# Make subject a factor (not number)
+sleep_long <- sleep_wide %>%
+  pivot_longer(cols = !Subject,
+               names_to = "day",
+               names_prefix = "day_",
+               values_to = "reaction_time") %>% 
+  mutate(day = as.numeric(day), 
+         Subject = as.factor(Subject))
+```
+
+
+
+\
+\
+
+
+
+
+## Exercise 2: Plot reaction times
+
+Use `sleep_long` with `geom_line()` to plot the reaction times (y) vs sleep deprivation (x), with a separate line representing each subject.
+
+```{r}
+
+```
+
+Now add a `facet_wrap(~ Subject)` to your plot.
+
+```{r}
+
+```
+
+
+
+
+\
+\
+
+
+
+## Exercise 3: Make the data wider again
+
+We can also make the data *wide* again, with each year becoming its own column, using `pivot_wider()`. This function requires us to specify which existing column to take the new column `names_from` (`day` in this case) and which existing column to take the new column `values_from` (`reaction_time` in this case):    
+    
+```{r}
+sleep_long %>%
+  pivot_wider(names_from = day,
+              values_from = reaction_time)
+```
+
+
+
+\
+\
+
+
+
+## Exercise 4: More practice
+
+Two artists' songs entered the Billboard charts on November 6, 1999. The "wk" variables indicate their songs' rankings in each subsequent week on the charts:
+    
+```{r}
+# Load data
+library(tidyr)
+data("billboard")
+
+# Just focus on Nov 6, 1999
+nov_1999 <- billboard %>% 
+  filter(date.entered == "1999-11-06") %>%
+  select(-track, -date.entered) 
+
+# Check it out
+nov_1999
+```
+
+**Goal:**       
+Create a visualization of the rankings (y-axis) over time (x-axis) for the 2 artists. There are hints below, but you're encouraged to play around and use as few hints as possible.
+
+```{r}
+
+```
+
+
+**Hints**       
+- Should you first pivot wider or longer?
+- Once you pivot, the week number is turned into a character variable. How can you change it to a number?
+
+
+
+
+\
+\
+
+
+
+
+
+## Exercise 5: Even more practice
+
+The `daily_show_guests` data from the `fivethirtyeight` package, shortened to `daily` here, is associated with [this article](https://fivethirtyeight.com/datalab/every-guest-jon-stewart-ever-had-on-the-daily-show/). This data includes a list of every guest to ever appear on The Daily Show (pre-Trevor Noah, during Jon Stewart's time). Note that when multiple people appeared together, each person receives their own line.
+
+```{r}
+library(fivethirtyeight)
+data("daily_show_guests")
+daily <- daily_show_guests
+```
+
+Identify the 15 guests that appeared the most. (This isn't a very representative guest list!) HINTS:
+
+- no pivoting is needed here
+- to count up the number of instances for a group, use `summarize()` with `count = n()`
+
+
+
+
+\
+\
+
+
+
+
+## Exercise 6: Challenge
+
+Create the following data set containing 19 columns:
+    
+- The first column should have the 15 guests with the highest number of total appearances on the show, listed in descending order of number of appearances.
+
+- 17 columns should show the number of appearances of the corresponding guest in each year from 1999 to 2015 (one per column).
+
+- Another column should show the total number of appearances for the corresponding guest over the entire duration of the show.
+    
+NOTE: This is a tough one! I (Alicia) had to think about this quite a bit. There are some hints below, but give it a try first.
+
+HINTS: There are lots of ways to do this. You don't necessarily need all of these hints.
+
+- First obtain the number of times a guest appears each year.
+- To this, `mutate()` a new column which includes the total number of times a guest appears across all years.
+- Pivot (longer or wider?). When you do, use `values_fill = 0` to replace NA values with 0.
+- Arrange and isolate the top 15.
+
+
+
+
+
+\
+\
+
+

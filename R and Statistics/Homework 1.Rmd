@@ -1,0 +1,281 @@
+---
+title: "Homework 1: Visualizing and Modeling Relationships"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+date: "2023-06-20"
+---
+7.2 Covariates
+
+In examining multivariate models, we’ve observed that adding explanatory variables to the model helps to better explain variability in the response. For example, compare the plot on the left which ignores the categorical predictor “z” vs the plot on the right that includes it
+
+However, explaining variability isn’t the only reason to include multiple predictors in a model. When exploring the relationship between response y and predictor x1, there are typically covariates for which we want to control. For example, in comparing the effectiveness of 2 medical treatments, we might want to control for patients’ ages, health statuses, etc.
+
+1. We’ll explore the concept of controlling for covariates using the CPS_2018 data. These data, obtained through the Current Population Survey, contain labor force characteristics for a sample of workers in 2018. We’ll look only at 18-34 year olds that make under $250,000 per year:
+```{r message = FALSE, warning = FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidymodels)
+```
+
+```{r}
+# Load and clean data
+cps <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/CPS_2018.csv") %>% 
+  filter(age >= 18, age <= 34) %>% 
+  filter(wage < 250000)
+
+head(cps, 3)
+```
+
+We’ll use these data to explore the pay gap between married and single workers. The simple model below indicates that: On average, married workers make $46,145 per year and single workers make $17,052 less per year than married workers.
+```{r}
+# STEP 1. "Specify" that we want to build a linear regression model and to estimate this model using the least squares / lm approach
+lm_spec <- linear_reg() %>%
+  set_mode("regression") %>% 
+  set_engine("lm")
+
+# STEP 2: Estimate the model of wages by marital status
+cps_mod1 <- lm_spec %>% 
+  fit(wage ~ marital, data = cps)
+
+# STEP 3: Check out the results
+cps_mod1
+```
+
+2. Correlation does not imply causation
+If you’re unmarried, this model probably didn’t inspire you to go out and find a spouse. Just because there’s a relationship between wages and marital status doesn’t mean that being single causes a person to earn less. List a few confounding variables that might explain this relationship between wages and marital status.
+
+Being married likely means that the individual is settled down with a stable career, and possibly even supporting children. Being married also can maen that the person is older.
+
+3. Including covariates / confounding variables
+One variable that might explain the observed relationship between wages & marital status is age - on average, in comparison to younger workers, older people tend to have more job experience (thus higher salaries) and are more likely to be married. We can control for this age covariate by including it in our model.
+
+```{r}
+#Fit and summarize a model of wage by marital and age.
+cps_mod2 <- lm_spec %>%
+  fit(wage~marital+age,data=cps)
+cps_mod2
+
+#Construct a visualization of this relationship. Include a representation of your model.
+ggplot(cps,aes(x=age,y=wage,color=marital))+
+  geom_point()
+
+#Compare two workers that are both 20 years old, but one is married and the other is single. By how much do their predicted wages to differ? Use the model formula to calculate this difference and the plot to provide intuition.
+#20 and single
+-19596+2214*20-7500
+
+#20 and married
+-19596+2214*20
+
+#30 and single
+-19596+2214*30-7500
+#30 and married
+-19596+2214*30
+```
+In general, a single 20-year-old has a higher wage than a married 20-year-old. But our formula says that a single 20-year-old will make roughly 7000 less compared to a married 20-year-old. A 30-year-old will make roughly 7000 less compared to a married 20-year-old. This is because of our marital coefficient. The predictions for 30-year-olds is much more believable compared to 20-year-olds based on the graph.
+
+4. Controlling for more covariates
+Taking age into account added some insight into the discrepancy between single and married workers’ wages. Let’s consider what happens when we control for even more potential covariates To this end, model a person’s wage by their marital status while controlling for their age, years of education, and the job industry in which they work:
+```{r}
+cps_mod3 <- lm_spec %>%
+  fit(wage~marital+age+education+industry,data=cps)
+cps_mod3
+```
+This is a difficult model to visualize since there are 2 quantitative predictors (age and education) and 2 categorical predictors (marital and industry) with a possible 12 category combinations (2 marital statuses * 6 industries). If you had to draw it, what would it look like?
+
+    12 parallel lines
+    12 non-parallel lines
+    12 parallel planes
+    12 non-parallel planes
+
+We would have this be in 3D, and they are parallel.
+
+Compare two workers that are both 20 years old, have 16 years of education, and work in the service industry. If one is married and the other is single, by how much do their predicted wages to differ?
+```{r}
+#Single 20-year-old, 16 education, work in service industry.
+-52499-5893+1493*20+3911*16
+#Single 20-year-old, 16 education, work in service industry.
+-52499+1493*20+3911*16
+```
+The married individual makes about 6000 more.
+
+Compare two workers that are both 30 years old, have 12 years of education, and work in the construction industry. If one is married and the other is single, by how much do their predicted wages to differ?
+```{r}
+#Single 30-year-old, 16 education, work in service industry.
+-52499-5893+1493*30+3911*16
+#Single 30-year-old, 16 education, work in service industry.
+-52499+1493*30+3911*16
+```
+In light of b & c, interpret the maritalsingle coefficient.
+
+The married individual makes about 6000 more. Thus, if an individual is single, they are predicted to make about 6000 less money.
+
+In conclusion, we saw differet maritalsingle coefficients in each of cps_mod1 (-$17052), cps_mod2 (-$7500), and cps_mod3 (-$5893). Explain the significance of the difference between these measurements - what insight does it provide?
+
+We notice that the more predictors we consider, the lower the marital coefficients becomes. This is because the marital predictor contributes less to the overall result.
+
+7.3 Least Squares Estimation
+```{r}
+# Load the package and data
+library(palmerpenguins)
+data(penguins)
+
+# Keep only the 2 variables of interest
+penguins <- penguins %>% 
+  dplyr::select(flipper_length_mm, body_mass_g) %>% 
+  na.omit()
+```
+
+Let response variable Y be the length in mm of a penguin’s flipper (or “arm”) and X be their body mass in grams. Then the (population) linear regression model of Y vs X is
+
+Y=β0+β1X+ε
+
+where β0 and β1 represent population coefficients. We can’t measure all penguins, thus don’t know the “true” values of the βi. Rather, we can use sample data to estimate the βi by ^βi. That is, the sample estimate of the population model line is
+
+Y=^β0+^β1X
+
+In choosing the estimates, we want the ^βi that “best” describe the relationship between Y and X among the sample subjects. For example, in the visualization below, the red model does a better job than the blue model at capturing the relationship between flipper length in body mass. On average, the individual penguins fall closer to the red model than the blue model – that is, overall, the red model has smaller residuals.
+
+Estimating model coefficients using Least Squares Estimation
+
+Suppose we have a sample of n
+“subjects”. For subject i∈{1,...,n} let Yi denote the observed response value and (Xi1,Xi2,...,Xip) denote the observed values of the p predictors. Then the model / predicted outcome for subject i is ^Yi=^β0+^β1Xi1+⋯+^βpXip The residual measures the difference between the observed and predicted outcome, hence how “far” subject i falls from the model: Yi−^Yi Our goal is to identify sample coefficient estimates ^β=(^β0,^β1,…,^βp) which minimize the overall size of the residuals. Though there are multiple ways to calculate the “overall size of the residuals”, the standard **least squares estimation** approach calculates the coefficients ^β which minimize the sum of the squared residuals: n∑i=1(Yi−^Yi)2=n∑i=1(Yi−(^β0+^β1Xi1+⋯+^βpXip))2
+
+6. Calculating residuals
+Our sample estimate of the population model of flipper length by body mass is Y=^β0+^β1X=136.73+0.015X
+```{r}
+# STEP 1: We're using different data, but still have the same method specification!
+# Let's remind ourselves.
+lm_spec <- linear_reg() %>%
+  set_mode("regression") %>% 
+  set_engine("lm")
+
+# STEP 2: Estimate the model
+penguin_mod <- lm_spec %>% 
+  fit(flipper_length_mm ~ body_mass_g, data = penguins)
+penguin_mod
+```
+
+7. Digging into the residuals
+Next, let’s explore the residuals for all penguins in the dataset – these are stored within our penguin_mod object! To access these residuals, we can augment() the information stored in penguin_mod with the original penguins data. The resulting penguin_results data frame stores the observed flipper_length_mm and body_mass_g, the model predicted flipper length (.pred), and the resulting residual (.resid):
+```{r}
+# Augment the model information with the Obtain the model fit & augment it with the penguins data
+penguin_results <- penguin_mod %>% 
+  augment(new_data = penguins)
+
+# Check it out
+penguin_results %>% 
+  head()
+
+#Use the penguin_results to confirm that, within rounding error, the mean residual across all penguins equals 0. This property always holds for least squares regression models – the least squares solution ensures that our observations are balanced above and below the sample model.
+penguin_results %>%
+  summarize(mean(.resid))
+
+#Calculate and interpret the maximum residual, hence the furthest that a penguin’s observed flipped length falls from the model.
+penguin_results %>%
+  summarize(max(.resid))
+```
+residual = observed - predicted
+
+Consider the following 2 sample penguins, summarized and plotted below. Calculate the residuals, i.e. the length of the vertical lines, for both penguins.
+## # A tibble: 2 × 2
+##   flipper_length_mm body_mass_g
+##               <int>       <int>
+## 1               181        3750
+## 2               210        4200
+
+Predicted first penguin flipper length is 194.0296, so the residual is -13.0296. Predicted second penguin flipper length is 200.9047, so the residual is 9.0953.
+
+7.4 Interaction
+```{r}
+# Load and clean data
+campaigns <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/campaign_spending.csv") %>% 
+  select(wholename, district, votes, incumbent, spending) %>% 
+  mutate(spending = spending / 1000) %>% 
+  filter(!is.na(spending))
+```
+
+The number of votes received varies by candidate. Our goal is to explain some of this variability:
+```{r}
+ggplot(campaigns, aes(x = votes)) + 
+  geom_histogram(color = "white")
+```
+
+8. A first model (review)
+We might be able to explain some of the variability in votes received by a candidate’s incumbency status and campaign spending.
+```{r}
+#Construct a visualization of the relationship of votes vs incumbent and spending. Do not include a geom_smooth().
+ggplot(campaigns,aes(y=votes,x=spending,color=incumbent))+
+  geom_point()
+
+#Construct a model of votes by incumbent and spending. Store this as vote_model_1. Write out the following formulas:
+        #the full model formula
+        #a simplified formula for challengers
+        #a simplified formula for incumbents
+vote_model_1 <- lm_spec %>% 
+  fit(votes~spending+incumbent,campaigns)
+vote_model_1
+
+#Interpret all coefficients. Remember: your interpretation of the incumbent coefficient here should be different than in the first model since the models contain different sets of predictors.
+
+```
+votes = 1031.3 + 174.5spending + 2764incumbentYes
+challengers: votes = 1031.3 + 174.5spending
+incumbents: 3795.3 + 174.5spending
+
+spending coefficient is the higher number of votes while holding incumbent constant. incumbentYes coefficient is adding 2764 votes if the candidate is incumbent. Intercept coefficient is the number of votes while holding predictors constant.
+
+9. Check your assumptions
+```{r}
+vote_model_1 %>% 
+  augment(new_data = campaigns) %>% 
+  ggplot(aes(x = spending, y = votes, color = incumbent)) + 
+    geom_point(size = 0.5) + 
+    geom_line(aes(y = .pred))
+
+#The parallel lines reflects our model assumption that incumbents and challengers enjoy the same return on campaign spending. BUT this may not be a great assumption. Without the parallel model constraint, the trend looks more like this:
+ggplot(campaigns, aes(x = spending, y = votes, color = incumbent)) + 
+    geom_point(size = 0.5) + 
+    geom_smooth(method = "lm", se = FALSE)
+```
+The differing slopes of the lines above illustrate an interaction between the campaign spending & incumbency status predictors: the relationship between votes & spending differs for incumbents and challengers. Describe this interaction in words. In what way does the relationship between votes & spending differ for incumbents and challengers?
+
+Interaction
+
+In modeling y
+, predictors x1 and x2 interact if the relationship between x1 and y differs for different values of x2.
+
+There is a stronger correlation between spending and votes for challengers, while there is a weaker correlation between spending and votes for incumbents.
+
+10. Incorporating an interaction term
+```{r}
+#To allow our models for challengers and incumbents to have different intercepts and different slopes, we can type spending * incumbent instead of spending + incumbent in our model code:
+# Fit the model
+vote_model_2 <- lm_spec %>% 
+  fit(votes ~ spending * incumbent, data=campaigns)
+
+# Check out the results
+vote_model_2
+```
+votes = 690.5 + 209.7spending + 4813.9incumbentYes - 125.9spending*incumbentYes
+challengers: votes = 690.5 + 209.7spending
+incumbents: votes = 5504.4 + 335.6spending
+
+```{r}
+#Calculating predicted number of votes by hand
+#Candidate 1: a challenger that spends 10,000 Euros
+690.5+209.7*10
+
+#Candidate 2: an incumbent that spends 10,000 Euros
+5504.4+83.8*10
+
+#Then check work with predict()
+vote_model_2 %>% 
+  predict(new_data=data.frame(incumbent="No",spending=10))
+vote_model_2 %>% 
+  predict(new_data=data.frame(incumbent="Yes",spending=10))
+```
+
+Intercept tells us the base number of votes for challengers without spending eurors. spending coefficient is the slope for challengers. incumbentYes is the change in intercept for incumbents.On average, the increase in votes corresponding to 1000 euros increase in spending is 126 votes less for incumbents compared to challengers.

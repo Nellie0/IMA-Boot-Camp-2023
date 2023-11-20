@@ -1,0 +1,1058 @@
+---
+title: "Model evaluation"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+---
+
+
+```{r warning = FALSE, message = FALSE}
+# Load some packages we'll need
+
+# ggplot2 includes our plotting function ggplot()
+library(ggplot2)
+
+# gridExtra includes functions that allow us to print plots side-by-side
+library(gridExtra)
+
+# dplyr includes functions we need for data wrangling
+library(dplyr)
+
+# tidymodels includes functions we'll use for modeling and model evaluation
+library(tidymodels)
+```
+
+```{r warning = FALSE, message = FALSE}
+# Set a more color-blind friendly palette for ggplot
+palette(c("#000000", "#56B4E9", "#E69F00", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7"))
+scale_colour_discrete <- function(...) scale_colour_manual(values = palette())
+scale_fill_discrete <- function(...) scale_fill_manual(values = palette())
+```
+
+\
+\
+
+
+# Review
+
+Let's revisit wage data, obtained through the 2018 Current Population Survey, for a sample of 18-34 year olds that make under $250,000 per year:
+
+```{r}
+# Load and clean data
+cps <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/CPS_2018.csv") %>% 
+  filter(age >= 18, age <= 34) %>% 
+  filter(wage < 250000)
+
+head(cps, 3)
+```
+
+```{r}
+# Plot wage vs marital status
+ggplot(cps, aes(x = marital, y = wage)) + 
+  geom_boxplot()
+```
+
+
+```{r}
+# Model wages by marital status
+
+# STEP 1: specify our modeling method
+#What algorithm we are going to do
+lm_spec <- linear_reg() %>%
+  set_mode("regression") %>% 
+  set_engine("lm")
+
+lm_spec
+```
+
+```{r}
+# STEP 2: Fit / estimate the model using the sample data
+cps_mod1 <- lm_spec %>% 
+  fit(wage ~ marital, data = cps)
+
+cps_mod1
+```
+46145 = average wage for married person.
+-17052 = average wage for single person.
+
+```{r}
+# Plot wage vs age, education, job industry, & marital status
+#Not done
+ggplot(cps,aes(y=wage,x=age,color=marital,group=industry))+
+  geom_boxplot(method="lm",se=FALSE)
+```
+
+
+```{r}
+# Model wages by age, education, job industry, & marital status
+cps_mod2 <- lm_spec %>% 
+  fit(wage~age+education+industry+marital,cps)
+
+cps_mod2
+
+ggplot(cps,aes(y=wage,x=education,color=industry))+
+  geom_smooth(method="lm",se=FALSE)
+```
+-5893 = average wage for single person is 5893 less than that of people when controlling for/fixing/holding constant age, education, and job industry.
+
+3911 = for every extra year of education, the typical wage increases by 3911, when controlling for marital status, industry, and age.
+
+
+\
+\
+
+
+# Model evaluation
+
+Recall that "All models are wrong, but some are useful" -- George Box (1919--2013). Thus it's important to ask the following about each model.
+
+- How **fair** is our model? Is our model building process and application ethical? Biased? What are the potential impacts of this analysis, both societal and individual?    
+- How **wrong** is our model? Are our model assumptions reasonable?    
+- How **strong** is our model? How well does it explain the variability in the response? Relatedly, how **accurate** are our model's predictions?    
+
+
+\
+
+
+Though these questions are broadly applicable across all machine learning techniques, we'll examine these questions through a linear regression example. The `humans` data includes measurements on 40 adults. Our overall goal will be to model $Y$, body fat percentage (`body_fat`) by the various predictors in the dataset:
+
+```{r}
+humans <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/bodyfat50.csv") %>%
+  dplyr::select(-fatBrozek, -density, -fatFreeWeight, -hipin, -forearm, -neck, -adiposity) %>% 
+  filter(ankle < 30) %>% 
+  rename(body_fat = fatSiri)
+
+head(humans)
+```
+
+
+
+\
+\
+
+
+
+**Directions**
+
+Complete exercises 1-4 in your breakout rooms. When you are done, check in with me and then take a break.
+
+
+
+\
+\
+\
+\
+
+
+
+#  How STRONG is our model?
+
+## Pre-exercise exercise
+
+Introduce yourselves! What are you looking forward to this summer? Who will share their screen?
+
+
+\
+\
+
+
+
+## Exercise 1: Three models
+
+Consider three possible models of `body_fat`. Which of these do you anticipate will be the *strongest*?   
+
+```{r}
+# Specify our modeling method (the same as usual)
+lm_spec <- linear_reg() %>%
+  set_mode("regression") %>% 
+  set_engine("lm")
+
+# Estimate three models
+model_1 <- lm_spec %>% 
+  fit(body_fat ~ chest, data = humans)
+model_2 <- lm_spec %>% 
+  fit(body_fat ~ age, data = humans)
+model_3 <- lm_spec %>% 
+  fit(body_fat ~ age + chest, data = humans)
+```
+
+```{r fig.width = 7, fig.height = 2.5}
+g1 <- ggplot(humans, aes(x = chest, y = body_fat)) + 
+  geom_point()
+
+g2 <- ggplot(humans, aes(x = age, y = body_fat)) + 
+  geom_point()
+
+g3 <- ggplot(humans, aes(x = age, y = body_fat, color = chest)) + 
+  geom_point()
+
+grid.arrange(g1, g2, g3, ncol = 3)
+```
+
+
+\
+\
+
+
+
+
+
+
+## Exercise 2: R^2^
+
+Recall that we can measure the strength of these models using $R^2$. Just as we can decompose data $Y$ into the sum of its predictions $\hat{Y}$ and residuals ($Y - \hat{Y}$):
+
+$$Y = \hat{Y} + (Y - \hat{Y})$$
+
+we can decompose the overall *variability* in $Y$ by that which is explained by the model, $\text{Var}(\hat{Y})$, and that which is left unexplained, $\text{Var}(Y - \hat{Y})$:
+
+$$\text{Var}(Y) = \text{Var}(\hat{Y}) + \text{Var}(Y - \hat{Y}) \; .$$
+
+Then $R^2 \in [0,1]$ measures the *proportion* of the variability in $Y$ that's explained by the model:
+
+$$R^2 = \frac{\text{Var}(\hat{Y})}{\text{Var}(Y)}$$
+
+### Part a
+
+We *could* calculate $R^2$ by hand, but won't. It's reported under a `glance()` at the model:    
+
+```{r}
+model_1 %>% 
+  glance()
+```
+
+```{r}
+model_2 %>% 
+  glance()
+```
+
+```{r}
+model_3 %>% 
+  glance()
+```    
+ 
+model1 R^2=0.4829783	
+model2 R^2=0.0739725
+model3 R^2=0.5070827	
+
+\
+
+
+### Part b
+
+Which is the stronger predictor, age or chest circumference?    
+
+The strongest predictor is chest circumference
+
+\
+
+
+### Part c
+
+Which of the three models is strongest?
+
+model 3
+
+
+
+\
+
+
+### Part d
+
+In general, what do you think happens to $R^2$ as we add more predictors to the model?  
+
+Increases
+
+
+\
+\
+\
+\
+
+
+
+# How ACCURATE are our predictions? (Part I)
+
+Like the question of overall model strength, the question of a model's accuracy is directly linked to the size of its residuals:
+
+![](https://ajohns24.github.io/images/stat253/evaluate_predictions.png)
+
+
+\
+
+
+To this end we can summarize the *combined* size of the residuals, $y_1 - \hat{y}_1$, $y_2 - \hat{y}_2$, ..., $y_n - \hat{y}_n$ where $n$ is sample size. There are multiple metrics, but we'll focus on MAE:
+
+$$\text{MAE} = \text{ mean absolute error } = \frac{1}{n}\sum_{i=1}^n |y_i - \hat{y}_i|$$
+
+
+
+\
+
+
+
+## Exercise 3: MAE
+
+Calculating the MAE requires residuals for each person in the data set. To this end, recall from Homework 1 that we can obtain this information in a data frame as follows:
+
+```{r}
+# Check out the model_1 predictions (.pred) and residuals (.resid) for the first 6 people
+model_1 %>% 
+  augment(new_data = humans) %>% 
+  dplyr::select(body_fat, .pred, .resid) %>% 
+  head()
+```
+
+### Part a
+
+Calculate and interpret the MAE for `model_1` "by hand".
+
+```{r}
+# NOTE: abs() calculates absolute value
+
+# Calculate the MAE for model_1
+ model_1 %>% 
+   augment(new_data = humans) %>% 
+   summarize(mean(abs(.resid)))
+```
+
+
+Confirm that your by hand calculation matches the calculation using the `mae()` function:
+
+
+```{r}
+# Calculate the MAE for model_1
+model_1 %>% 
+  augment(new_data = humans) %>% 
+  mae(truth = body_fat, estimate = .pred)
+```
+
+
+Use `mae()` to calculate the MAE for `model_2` and `model_3`:
+
+
+```{r}
+# Calculate the MAE for model_2
+model_2 %>% 
+  augment(new_data = humans) %>% 
+  mae(truth = body_fat, estimate = .pred)
+# Calculate the MAE for model_3
+model_3 %>% 
+  augment(new_data = humans) %>% 
+  mae(truth = body_fat, estimate = .pred)
+```
+
+
+### Part b
+
+Which model produces the most accurate predictions?    
+
+model 3 has the lowest mae (lowest mean absolute error)
+
+### Part c
+
+In general, what do you think happens to MAE as we add more predictors to the model?
+
+In general, the MAE decreases as we add more predictors since the error between predictor and "truth"=real value becomes smaller.
+
+### Part d
+
+Though it might be tempting to evaluate predictive accuracy by calculating the *mean* residual, explain why this wouldn't work. Provide some numerical evidence.
+
+Negatives would get in the way.
+    
+```{r}
+model_1 %>% 
+  augment(new_data=humans) %>%
+  summarize(mean(.resid))
+```
+
+    
+
+\
+\
+
+
+
+## Exercise 4: Experiment
+
+Each breakout room has been given a number which corresponds to a unique set of body fat data for 40 adults. To obtain this data, replace the `?????` at the end of the data address with your number: 160
+
+```{r}
+# NOTE: Put in your group's data and then remove the '#'
+group_data <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/bodyfat160.csv") %>%
+  dplyr::select(-fatBrozek, -density, -fatFreeWeight, -hipin, -forearm, -neck, -adiposity) %>% 
+  filter(ankle < 30) %>% 
+  rename(body_fat = fatSiri)
+```    
+    
+### Part a
+
+As a group, use your data to choose which of the following you believe to be the best predictive model of `body_fat`, and calculate the MAE for this model:    
+
+- Model 1: `body_fat ~ chest`    
+- Model 2: `body_fat ~ chest + age`    
+- Model 3: `body_fat ~ chest * age * weight * height * abdomen`    
+ 
+
+```{r}
+model_1_group <-lm_spec %>% 
+  fit(body_fat~chest,group_data)
+
+model_2_group <-lm_spec %>% 
+  fit(body_fat~chest+age,group_data)
+
+model_3_group <- lm_spec %>% 
+  fit(body_fat~chest*age*weight*height*abdomen,group_data)
+
+model_1_group %>% 
+  augment(new_data=group_data) %>% 
+  mae(truth=body_fat,estimate=.pred)
+model_2_group %>% 
+  augment(new_data=group_data) %>% 
+  mae(truth=body_fat,estimate=.pred)
+model_3_group %>% 
+  augment(new_data=group_data) %>% 
+  mae(truth=body_fat,estimate=.pred)
+```
+
+
+### Part b
+
+Only when you're done:    
+
+- Open this [Top Model Competition Google Doc.](https://docs.google.com/spreadsheets/d/1ntB0Uq6Td9svFhw5I8SxKcrvVTTyv64PmmQv2wt8ZKc/edit?usp=sharing)    
+- Record your team name & the number of the data you were given.    
+- Record which model you chose (1, 2, or 3).
+- Record the MAE for your model.    
+
+
+```{r}
+
+```
+
+Model 3 is the best since it has the lowest MAE.
+### Part c
+
+Once you finish, return to the main room to check in, and then take a short break.
+
+```{r}
+
+```
+
+  
+
+\
+\
+\
+\
+
+
+
+
+# How ACCURATE are our predictions? (Part II) 
+
+Our post-experiment discussions highlight a couple of important themes:    
+
+- **Training** and **testing** our model using the same data can result in overly optimistic assessments of model quality.  For example, **in-sample** or **training errors** (ie. MAEs calculated using the same data that we used to train the model) are often smaller than **testing errors** (ie. MAEs calculated using data not used to train the model).        
+
+- Adding more and more predictors to a model might result in **overfitting** the model to the noise in our sample data. In turn, the model loses the bigger picture and does not generalize to new data outside our sample (ie. it results in bad predictions).    
+    
+
+\
+\
+
+
+
+We'll consider a different measure of predictive accuracy that addresses some of these concerns: **cross validation**. Throughout this discussion, we'll all use the same data and compare the following 2 models:    
+
+```{r}
+model_1  <- lm_spec %>% 
+  fit(body_fat ~ chest, data = humans)
+model_16 <- lm_spec %>% 
+  fit(body_fat ~ poly(chest, 16), data = humans) #like chest^2, chest^3, etc
+```
+
+```{r}
+# Plot the models    
+ggplot(humans, aes(y = body_fat, x = chest)) + 
+  geom_point() + 
+  stat_smooth(method = "lm", se = FALSE)
+
+ggplot(humans, aes(y = body_fat, x = chest)) + 
+  geom_point() + 
+  stat_smooth(method = "lm", formula = y ~ poly(x, 16), se = FALSE)
+```
+
+The 16-order one is definitely overfit. It's very wiggly, there's not that type of correlation between chest circumference and body fat. The first model is going to be worse for our current data, but is going to be better for predicting with new people.
+
+The in-sample MAE for these 2 models follows:
+
+```{r}
+# MAE for model_1
+model_1 %>% 
+  augment(new_data = humans) %>%
+  mae(truth = body_fat, estimate = .pred)
+
+# MAE for model_16
+model_16 %>% 
+  augment(new_data = humans) %>%
+  mae(truth = body_fat, estimate = .pred)
+```
+The second model has a slightly lower MAE, as expected.
+
+\
+\
+
+
+
+
+## Exercise 5: Validation
+
+In practice, we only have one sample of data. We need to use this to both train (build) and test (evaluate) our model. Consider a simple strategy where we *train* the model on one half of the sample and *test* it on the other half. To ensure that we all get the same samples and can **reproduce** our results, we'll *set the random number generating seed* to the same number (2000).  We'll discuss this in detail as a class!        
+
+```{r}
+# Set the random number seed
+set.seed(2000)
+
+# Split the humans dataset into half for training and testing (prop = 0.5)
+# Ensure that these two halves are similar with respect to body_fat (strata = body_fat)
+humans_split <- initial_split(humans, strata = body_fat, prop = 0.5)
+humans_split
+
+# Obtain just the training data from the split
+data_train <- humans_split %>% 
+  training()
+
+# Obtain just the testing data from the split
+data_test <- humans_split %>% 
+  testing()
+```
+
+```{r}
+# Confirm the dimensions
+dim(data_train)
+dim(data_test)
+```
+    
+
+### Part a
+
+**Using the training data**: Fit the model of `body_fat` by `chest` and calculate the training MAE (i.e. how well the training model performs on the training data).
+
+```{r eval = FALSE}
+# NOTE: Don't type in this chunk.
+# Copy, paste, and complete in the blank chunk below.
+# (Ditto for other chunks with "eval = FALSE")
+
+# Construct the training model
+model_1_train <- lm_spec %>% 
+  fit(body_fat ~ chest, data = ___)
+
+# Calculate the training MAE
+model_1_train %>% 
+  augment(new_data = data_train) %>% 
+  mae(truth = body_fat, estimate = .pred)
+```
+
+```{r}
+# Construct the training model
+model_1_train <- lm_spec %>% 
+  fit(body_fat ~ chest, data = data_train)
+
+# Calculate the training MAE
+model_1_train %>% 
+  augment(new_data = data_train) %>% 
+  mae(truth = body_fat, estimate = .pred)
+```
+
+
+### Part b
+
+How well does this model generalize to the test set? Use the training model to predict `body_fat` for the **test cases** and calculate the resulting **test** MAE. *This should equal 5.82.*
+
+```{r eval = FALSE}
+# Calculate the test MAE
+model_1_train %>% 
+  augment(new_data = data_test) %>% 
+  mae(truth = body_fat, estimate = .pred)
+```    
+
+```{r}
+model_1_train %>% 
+  augment(new_data = data_test) %>% 
+  mae(truth = body_fat, estimate = .pred)
+```
+
+
+### Part c
+
+Notice that, as we might expect, the testing MAE (5.82) is greater than the training MAE (3.88) -- that is, the training model was slightly better at predicting the data we used to build it. We *could* stop here and use this testing MAE to communicate / measure how well `model_1` generalizes to the population. But what might be the flaws in this approach?  Can you think of a better idea?    
+We already had a small data set, and now we're making it even smaller, so it could be inaccurate. Results could depend on how the split was made. Having more data would make it more accurate.
+
+
+\
+\
+
+
+
+
+## Exercise 6: 2-fold cross validation
+
+The validation approach we used above used `data_train` to build the model and then tested this model on `data_test`. Let's reverse the roles!
+
+```{r eval = FALSE}
+# Build the model using data_test
+model_1_test <- lm_spec %>% 
+  fit(body_fat ~ chest, data = ___)
+
+# Test the model on data_train
+___ %>% 
+  augment(new_data = ___) %>% 
+  mae(truth = body_fat, estimate = .pred)
+```
+
+```{r}
+# Build the model using data_test
+model_1_test <- lm_spec %>% 
+  fit(body_fat ~ chest, data = data_test)
+
+# Test the model on data_train
+model_1_test %>% 
+  augment(new_data = data_train) %>% 
+  mae(truth = body_fat, estimate = .pred)
+```
+
+
+We now have 2 measures of MAE after reversing the roles of training and testing: 5.82 and 4.48. Instead of picking either one of these measures, *average them* to get an estimate of the **2-fold cross validation error**. The general **k-fold** cross validation algorithm is described below.  
+
+```{r}
+(5.82+4.48)/2
+```
+
+
+\
+\
+
+
+
+> **$k$-Fold Cross Validation (CV)**
+>
+> 1. Divide the data into $k$ groups / folds of equal size.
+> 2. Repeat the following procedures for each fold $j \in \{1,2,...,k\}$:
+>
+>       - Divide the data into a test set (fold $j$) & training set (the other $k-1$ folds).
+>       - Fit a model using the training set.
+>       - Use this model to predict the responses for the $n_j$ cases in fold $j$:
+>           $\hat{y}_1, ..., \hat{y}_{n_j}$
+>       - Calculate the MAE for fold $j$: $$\text{MAE}_j = \frac{1}{n_j}\sum_{i=1}^{n_j} (y_i - \hat{y}_i)^2$$
+> 3. Calculate the "cross validation error", ie. the average MAE from the $k$ folds: $$\text{CV}_{(k)} = \frac{1}{k} \sum_{j=1}^k \text{MAE}_j$$
+>
+> **In pictures:**  10-fold CV
+
+
+![](https://ajohns24.github.io/images/stat253/crossval.png) 
+
+
+
+
+
+
+
+\
+\
+
+
+
+
+## Exercise 7: Picking k
+
+To implement k-fold CV, we have to pick a value of k in $\{2,3,...,n\}$ where n is the original sample size.    
+
+### Part a
+
+n-fold CV is also called "leave-one-out CV" (LOOCV). Explain why. 
+
+The one we're leaving out is for testing. So if you let k=n, then we still leave out 1.
+
+
+### Part b
+
+In practice, k = 10 and k = 7 are common choices for cross validation. What advantages do you think 10-fold CV has over 2-fold CV?
+What advantages do you think 10-fold CV has over LOOCV?    
+
+The more folds you do, the more accurate it becomes. If you're working with a lot of samples, 10-fold CV might be better because of the large size.
+
+
+\
+\
+
+
+
+
+## Exercise 8: Using the tidymodels package for CV
+
+We *could* but won't hard code our own CV metrics. Instead, we'll use the `tidymodels` package.
+
+### Part a
+
+Use the following code to run 10-fold cross validation for `model_1`.    
+
+```{r}
+# STEP 1: Specify our modeling method
+lm_spec <- 
+  linear_reg() %>% 
+  set_mode("regression") %>% 
+  set_engine("lm") 
+```
+
+```{r}
+# STEP 2: Specify the workflow / which model to build for each training set.
+model_1_workflow <- workflow() %>%
+  add_formula(body_fat ~ chest) %>%
+  add_model(lm_spec)
+
+# Check it out (there's not much to observe!)
+model_1_workflow
+```
+
+```{r}
+# STEP 3: Build & evaluate the model on 10 training sets.
+# Apply the model_1_workflow to build the model...
+# Using each of the 10-fold CV training sets, i.e. resamples...
+# Then calculate the test MAE for each of these 10 training models.
+# Set the seed to get reproducible results.
+set.seed(2000)
+model_1_cv <- fit_resamples(
+  model_1_workflow,
+  resamples = vfold_cv(humans, v = 10), 
+  metrics = metric_set(mae)
+)
+# Check it out (there's not much to observe!)
+model_1_cv
+```
+
+
+\
+\
+
+
+
+### Part b
+
+```{r}
+# Repeat for Model 16
+# STEP 2: Specify the workflow / which model to build for each training set.
+model_16_workflow <- workflow() %>%
+  add_formula(body_fat ~ poly(chest,16)) %>%
+  add_model(lm_spec)
+
+# Check it out (there's not much to observe!)
+model_16_workflow
+# Set the seed to get reproducible results.
+set.seed(2000)
+model_16_cv <- fit_resamples(
+  model_16_workflow,
+  resamples = vfold_cv(humans, v = 10), 
+  metrics = metric_set(mae)
+)
+# Check it out (there's not much to observe!)
+model_16_cv
+```    
+
+
+
+
+\
+\
+
+
+
+
+
+## Exercise 9: Calculating the CV MAE
+
+We can now obtain the CV MAE for Models 1 & 16:
+    
+```{r eval = FALSE}
+# Cross-validated MAE for model 1
+model_1_cv %>% 
+  collect_metrics()
+
+# Cross-validated MAE for model 16
+model_16_cv %>% 
+  collect_metrics()
+```
+
+Recall that `model_1` had an in-sample MAE of 4.84 and `model_16` had an in-sample MAE of 4.07 .
+
+
+### Part a
+
+Within both models, how do the in-sample errors compare to the CV errors?
+
+The in-sample errors are lower compare to the CV errors.
+
+
+### Part b
+
+Which model has the best in-sample errors? The best CV error?    
+
+Model 16 had the best in-sample error (4.07). Model 1 has the best CV MAE (5.15)
+
+### Part c
+
+Which model would you choose?    
+    
+Model 1 is better since it's better at predicting outcomes among humans outside of our current sample.    
+    
+
+\
+\
+
+
+
+## Exercise 10: Digging deeper
+
+Above, `collect_metrics()` gave the final CV MAE, or the average MAE across all 10 test folds. In contrast, `unnest(.metrics)` provides the MAE from *each* test fold, thus more detailed info:
+    
+```{r}
+# MAE for each test fold: Model 1
+model_1_cv %>% 
+  unnest(.metrics)
+
+# MAE for each test fold: Model 16
+model_16_cv %>% 
+  unnest(.metrics)
+```
+    
+Use the information in `unnest(.metrics)` to confirm the CV MAE reported by `collect_metrics()` for both models.
+
+```{r}
+#Model 1 confirmation
+model_1_cv %>% 
+  unnest(.metrics) %>% 
+  summarize(cv_mae=mean(.estimate))
+
+#Model 16 confirmation
+model_16_cv %>% 
+  unnest(.metrics) %>% 
+  summarize(cv_mae=mean(.estimate))
+```
+
+
+\
+\
+
+
+## Exercise 11: OPTIONAL -- learning more
+
+Outside of class, you can watch the following videos if you want more detail. These were made for another course, but are still relevant to this bootcamp.
+
+- [Measures of model quality](https://drive.google.com/open?id=1BTaQjdVhvTdYPztNPMiAssforJ_IA24c)
+- [Cross validation](https://drive.google.com/file/d/1lHYdjB_X_cic1vO2dgLY05Fk26YNsxXe/view?usp=sharing)
+- Though it's outside the scope of our 1-week workshop, the [tidymodels package](https://www.tmwr.org/) provides a framework for model building and evaluation. It's an alternative to the `caret` package that's similar in grammar to `dplyr` and `ggplot2`.
+
+\
+\
+\
+\
+
+
+
+# How WRONG is our model?
+
+If our model is "wrong", it can lead to incorrect conclusions about the relationship of interest. In asking whether our model is wrong, we're specifically asking: what assumptions does our model make and are these reasonable?  There are 2 key assumptions behind our normal linear regression models:
+
+
+- **Assumption 1:**    
+    The observations of ($Y,X_1,X_2,...,X_k$) for any case are **independent** of the observations for any other case. (This would be violated if we had multiple observations or rows of data for each subject or if the data were a time series or...)
+- **Assumption 2:**    
+    At any set of predictor values $(X_{1}^*, X_{2}^*, \ldots, X_{k}^*)$,    
+    
+    $$\varepsilon \sim N(0,\sigma^2)$$
+    
+    That is:    
+    
+    - the expected value of the residuals is $E(\varepsilon) = 0$    
+        In words: At any set of predictor values, responses are balanced above & below the model. Thus the model accurately describes the "shape" and "location" of the relationship.    
+    
+    - *homoskedasticity*: the variance of the residuals $Var(\varepsilon) = \sigma^2$    
+        In words: At any set of predictor values, variability from the model is roughly constant.    
+        
+    - the $\varepsilon$ are *normally distributed*    
+        In words: individual responses are normally distributed around the model (thus are closer to the model and then taper off)
+
+
+\
+\
+
+
+
+## Exercise 12: Intuition
+
+For the plots below, use the raw data (top row) and corresponding residual plots (bottom row) to determine whether the following models are wrong.    
+```{r echo=FALSE, fig.width=9, fig.height=5, message = FALSE, warning = FALSE}
+set.seed(2019)
+x = rnorm(100, mean=10, sd=2)
+y = exp(x/1.5)  + rnorm(100,sd=500)
+z = 5*x+2 + rnorm(100,sd=5)
+dat1 <- data.frame(x,y,z)
+mod_1 <- lm(y~x, dat1)
+mod_2 <- lm(z~x, dat1)
+g1 <- ggplot(dat1, aes(x=x,y=y)) + geom_smooth(method="lm", se=FALSE) + geom_point()
+g2 <- ggplot(dat1, aes(x=x,y=z)) + geom_smooth(method="lm", se=FALSE) + geom_point()
+g3 <- ggplot(mod_1, aes(x = .fitted, y = .resid)) + 
+  geom_point() + 
+  geom_hline(yintercept = 0)
+g4 <- ggplot(mod_2, aes(x = .fitted, y = .resid)) + 
+  geom_point() + 
+  geom_hline(yintercept = 0)
+grid.arrange(g1,g2,g3,g4,ncol=2)
+```
+
+
+
+
+
+\
+\
+
+
+
+## Exercise 13: Are our models wrong?
+
+Both models look good.
+
+Check out residual plots for `model_1` (`body_fat ~ chest`) and `model_3` (`body_fat ~ chest + age`). Note that these plots are especially helpful for models like `model_3` where the relationship is in too many dimensions to visualize, thus it's tougher to tell whether our model assumptions are reasonable.    
+
+```{r}
+# Check out a residual plot of model_1
+# NOTE that our first argument is the model, not the data
+model_1 %>% 
+  augment(new_data = humans) %>% 
+  ggplot(aes(x = .pred, y = .resid)) + 
+    geom_point() + 
+    geom_hline(yintercept = 0)
+
+# You do: Construct a residual plot of model_3
+model_3 %>% 
+  augment(new_data=humans) %>% 
+  ggplot(aes(x=.pred,y=.resid))+
+    geom_point()+
+    geom_hline(yintercept=0)
+```   
+
+
+\
+\
+\
+\
+\
+
+
+
+# How FAIR is our model?  
+
+It's critical to ask whether our model is _fair_. In general, we cannot evaluate fairness with graphical or numerical summaries. Rather, we must ask ourselves a series of questions, including but not limited to:
+
+- Who collected the data and how was the collection funded?
+- How & why did they collect the data?
+- What are the power dynamics between the people that collected / analyzed the data and those that are impacted by the data collection / analysis?
+- What are the implications of the analysis on individuals and society, ethical or otherwise?
+
+\
+
+
+## Exercise 14
+
+Is _our_ model fair?
+
+
+
+
+## Exercise 15: Biased data, biased results -- example 1
+
+Beyond our model, we'll explore model fairness through several case studies. You might not get through all of these, or you might skip around, and that's ok. The hope is to simply start thinking about model fairness.
+
+Case study 1 will illustrate that DATA ARE NOT NEUTRAL. Data can reflect personal biases, institutional biases, power dynamics, societal biases, the limits of our knowledge, and so on. In turn, biased data can lead to biased analyses. Consider an example.    
+
+- Do a Google image search for "statistics professor." What do you observe?    
+
+- These search results are produced by a search algorithm / model. Explain why the data used by this model are not neutral.
+
+- What are the potential implications, personal or societal, of the search results produced from this biased data?    
+    
+
+
+
+\
+\
+
+
+
+## Exercise 16: Biased data, biased results -- example 2
+
+Consider the example of a large company that developed a model / algorithm to review the résumés of applicants for software developer & other tech positions. The model then gave each applicant a score indicating their hireability or potential for success at the company. You can think of this model as something like:            
+$$\text{potential for success } = \beta_0 + \beta_1 (\text{features from the résumé})$$
+
+Skim this [Reuter's article](https://www.reuters.com/article/us-amazon-com-jobs-automation-insight/amazon-scraps-secret-ai-recruiting-tool-that-showed-bias-against-women-idUSKCN1MK08G) about the company's résumé model.    
+
+- Explain why the data used by this model are not neutral.
+
+- What are the potential implications, personal or societal, of the results produced from this biased data?
+
+
+
+\
+\
+
+
+
+## Exercise 17: Rigid data collection systems
+
+When working with categorical variables, we've seen that our units of observation fall into neat groups. Reality isn't so discrete. For example, check out questions 6 and 9 on [page 2 of the 2020 US Census](https://www2.census.gov/programs-surveys/decennial/2020/technical-documentation/questionnaires-and-instructions/questionnaires/2020-informational-questionnaire-english_DI-Q1.pdf). With your group, discuss the following:    
+
+- What are a couple of issues you see with these questions?
+
+- What impact might this type of data collection have on a subsequent *analysis* of the census responses and the policies it might inform?
+
+- Can you think of a better way to write these questions while still preserving the privacy of respondents?
+
+**FOR A DEEPER DISCUSSION:** Read [Chapter 4 of Data Feminism](https://data-feminism.mitpress.mit.edu/pub/h1w0nbqp/release/3) on "What gets counted counts". 
+
+
+
+
+
+\
+\
+
+
+
+## Exercise 18: Presenting data -- "Elevating emotion and embodiment"
+
+NOTE: In recognition of Juneteenth, the following example highlights work done by W.E.B. Du Bois in the late 1800s / early 1900s. His work uses language common to that time period and addresses the topic of slavery.    
+
+The types of visualizations we've been learning in this course are standard practice, hence widely understood. Yet these standard visualizations can also suppress the lived experiences of people represented in the data, hence can miss the larger point. W.E.B. Du Bois (1868--1963), a "sociologist, socialist, historian, civil rights activist, Pan-Africanist, author, writer, and editor"^[https://en.wikipedia.org/wiki/W._E._B._Du_Bois], was a pioneer in elevating emotion and embodiment in data visualization. For the Paris World Fair of 1900, Du Bois and his team of students from Atlanta University presented 60 data visualizations of the Black experience in America, less than 50 years after the abolishment of slavery. To this end, Du Bois noted that *"I wanted to set down its aim and method in some outstanding way which would bring my work to notice by the thinking world."* That is, he wanted to increase the impact of his work by partnering technical visualizations with design that better connects to lived experiences. Check out:    
+
+- A [complete set of the data visualizations provided by Anthony Starks](https://speakerdeck.com/ajstarks/du-bois-visualizations-originals) (@ajstarks).
+- An [article by Allen Hillery](https://dataliteracy.com/web-du-bois-story-of-resilience/) (@AlDatavizguy).     
+
+Discuss your observations. In what ways do you think the W.E.B. Du Bois visualizations might have been more effective at sharing his work than, say, plainer bar charts?
+
+**FOR A DEEPER DISCUSSION AND MORE RECENT EXAMPLES:** Read [Chapter 3 of Data Feminism](https://data-feminism.mitpress.mit.edu/pub/5evfe9yd/release/5) on the principle of elevating emotion and embodiment, i.e. the value of "multiple forms of knowledge, including the knowledge that comes from people as living, feeling bodies in the world."
+    
+
+
+
+
+
+\
+\
+\
+\
+

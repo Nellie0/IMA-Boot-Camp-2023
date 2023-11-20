@@ -1,0 +1,314 @@
+---
+title: "Data wrangling I: dplyr verbs"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+---
+
+
+NOTE: You will not be able to knit this document until you fill in some blanks below.
+
+
+\
+\
+
+
+
+# Why R / RStudio? (A reminder)
+
+Beyond some simple calculations, you can't do data analysis without software. So why R / RStudio?
+
+- It's free.
+- It has a huge online community (thus finding help is easier than with other software).
+- Fun fact: RStudio was started by Macalester alum JJ Allaire and beta-tested at Mac!
+- It's used outside academia, and not just by statisticians.    
+    - [BBC uses R.](https://bbc.github.io/rcookbook/)    
+    - Minnesota Public Radio journalist [David Montgomery](http://dhmontgomery.com/portfolio/) uses R for data analysis and [visualizations](https://github.com/dhmontgomery/personal-work/tree/master/theme-mpr).
+    - [Ahmadou Dicko](https://www.rstudio.com/resources/rstudioglobal-2021/humanitarian-data-science-with-r/) discusses how humanitarians are using R to create "life saving data products."
+    - [Shelmith Kariuki](https://www.rstudio.com/resources/rstudioglobal-2021/rkenyacensus-package/) discusses how the Kenyan government shared its census data using R, to support policy making and development.
+    
+
+
+\
+\
+
+
+# dplyr verbs
+
+We can know all the theory and fancy algorithms in the world. But if we can't **wrangle our data**, we won't get anywhere in a data analysis. Today we'll explore how to wrangle **tidy data**^[Each column is a variable and each row is a case. See [Wickham, Tidy Data](https://www.jstatsoft.org/article/view/v059i10) and 
+[Wickham and Grolemund, Tidy Data](http://r4ds.had.co.nz/tidy-data.html) for more.] using the `dplyr` package which, along with `ggplot2`, is part of the broader **tidyverse**. In the `dplyr` grammar, there are 6 main data transformation _verbs_ or actions:
+
+\
+\
+
+
+
+verb            action                                            example 
+--------------- ------------------------------------------------- ---------------------------
+`select()`      **select** a subset of _columns_                  `select(x, y)`, `select(-x)`
+`mutate()`      create or **mutate** a new variable / _column_    `mutate(x = ___, y = ___)`
+`summarize()`   calculate a numerical *summary* of a _column_     `summarize(mean(x), median(y))`
+`group_by()`    **group** the _rows_ by a specified _column_      `group_by(x) %>% summarize(mean(y))`
+`arrange()`     **arrange** the _rows_                            `arrange(x)`, `arrange(desc(x))`   
+`filter()`      **filter** out / obtain a subset of _rows_        `filter(x == __, y > __)`  
+
+
+
+\
+\
+
+
+We can apply one or more verbs through a series of __pipes__ (`%>%`):    
+
+```{r eval = FALSE}
+# Apply 1 verb to my_data
+my_data %>% 
+  verb_1(___)
+
+# Apply 2 verbs to my_data
+my_data %>% 
+  verb_1(___) %>% 
+  verb_2(___)
+```
+
+
+
+\
+\
+
+
+
+# Exercises
+
+
+The fivethirtyeight article
+[The Ultimate Halloween Candy Power Ranking](http://fivethirtyeight.com/features/the-ultimate-halloween-candy-power-ranking/) analyzed data from [this experiment](http://walthickey.com/2017/10/18/whats-the-best-halloween-candy/) which presented subjects with a series of head-to-head candy match-ups and asked them to indicate which candy they preferred. You can load these data from the `fivethirtyeight` package:
+
+```{r message = FALSE, warning = FALSE}
+# Load data
+library(fivethirtyeight)
+data("candy_rankings")
+
+# Store under a shorter name
+candy <- candy_rankings
+
+head(candy)
+nrow(candy)
+```
+
+And load the `dplyr` package which contains the data wrangling functions:
+
+```{r warning = FALSE, message = FALSE}
+# Load the dplyr package
+library(dplyr)
+```
+
+
+\
+
+
+We'll wrangle these data below.  In each exercise, first identify which `dplyr` verbs will be useful.
+
+
+\
+\
+
+
+
+## Exercise 1: Sort the candies
+
+
+(`select` columns, `mutate` a column, `summarize` a column, `arrange` rows, `filter` rows, `group_by` groups)    
+
+```{r}
+# Sort the candy from least to most popular
+#Sort=arrange
+candy %>% 
+  arrange(winpercent) %>%
+  select(competitorname,winpercent)
+```
+
+```{r}
+# Show the 6 least popular candies
+candy %>% 
+  arrange(winpercent) %>% 
+  head()
+```
+
+```{r}
+# Show the 6 most popular candies
+candy %>% 
+  arrange(desc(winpercent)) %>% 
+  head()
+```
+
+
+\
+\
+
+
+
+## Exercise 2: Find the candies
+
+(`select` columns, `mutate` a column, `summarize` a column, `arrange` rows, `filter` rows, `group_by` groups)    
+
+\
+
+
+NOTE: R recognizes the following qualifiers:
+
+`<, <=, ==, >, >=, != (not equal), %in%`
+
+
+
+```{r}
+# Show the data for Snickers
+candy %>% 
+  filter(competitorname == "Snickers")
+```
+
+```{r}
+# Create a data set with only the chocolate candies
+# Show the first 6 entries
+candy %>% 
+  filter(chocolate == TRUE) %>% 
+  head()
+```
+
+```{r}
+# Create a data set of the candies that won less than 45% of their match-ups
+# Show the first 6 entries
+candy %>% 
+  filter(winpercent < 45) %>% 
+  head()
+```
+
+```{r}
+# In 3 lines, show the chocolate candies that won less than 45% of their match-ups
+
+candy %>%
+  filter(chocolate==TRUE) %>% 
+  filter(winpercent<45)
+```
+
+```{r}
+# In 2 lines, show the chocolate candies that won less than 45% of their match-ups
+candy %>% 
+  filter(chocolate==TRUE,winpercent<45)
+```
+    
+
+
+\
+\
+
+
+
+## Exercise 3: Define new variables
+
+(`select` columns, `mutate` a column, `summarize` a column, `arrange` rows, `filter` rows, `group_by` groups)    
+
+Create and save two new variables in the `candy` dataset:    
+
+- Redefine `sugarpercent` from 0-1 scale to the 0-100 scale
+
+- Define a `choc_peanut` variable which identifies candies that contain both chocolate & peanuts/almonds
+
+We'll do this in two steps (why?!?):
+
+- Convince ourselves that our code is doing what we want it to.
+- Then save the new variables in the `candy` dataset.
+
+
+```{r}
+# Play around first
+#Mutate is creating a new column, or like a new "variable"
+candy %>% 
+  mutate(sugarpercent = sugarpercent*100,
+      choc_peanut = (chocolate == TRUE & peanutyalmondy == TRUE)) %>% 
+  head() %>% 
+  select(competitorname,chocolate,peanutyalmondy,choc_peanut,sugarpercent)
+```
+
+```{r}
+# Then store the results
+# (How does this code differ from that above?) We don't need the head function since we're storing all of it. Make sure your code is right before overwriting your data.
+#Also, if you run the chunk multiple times, it overwrites it multiple times! This means sugarpercent keeps getting multiplied by 100!
+candy <- candy %>% 
+  mutate(sugarpercent = sugarpercent,
+      choc_peanut = (chocolate == TRUE & peanutyalmondy == TRUE))
+```
+    
+
+
+
+\
+\
+
+
+
+
+## Exercise 4: Calculate some stats
+
+(`select` columns, `mutate` a column, `summarize` a column, `arrange` rows, `filter` rows, `group_by` groups)    
+
+```{r}
+# Calculate the median and maximum winpercent
+candy %>% 
+  summarize(median(winpercent), max(winpercent))
+```
+
+```{r}
+# Calculate the median and maximum winpercent for chocolate vs non-chocolate candies
+# Hint: we are calculating summaries for different *groups*
+#Wanting to specifically look at chocolate
+candy %>% 
+  group_by(chocolate) %>% 
+  summarize(median(winpercent),max(winpercent))
+#Order of operations matters, need to group first
+```
+
+```{r}
+# Group the candies by chocolate vs non-chocolate candies
+# What do you get??
+candy %>% 
+  group_by(chocolate)
+```
+
+
+
+\
+\
+
+
+
+## Exercise 5: Pipe series
+
+(`select` columns, `mutate` a column, `summarize` a column, `arrange` rows, `filter` rows, `group_by` groups)    
+
+When we have a *series* of pipes, it's important to ask: Does the order of operations impacts the result? If not, is one order "better" than another?
+
+```{r}
+# Arrange the fruity candies from most to least popular
+candy %>% 
+  filter(fruity==TRUE) %>% 
+  arrange(desc(winpercent)) %>% 
+  head() %>% 
+  select(competitorname,fruity,winpercent)
+
+# Among chocolate candies, what's the median winpercent?
+candy %>% 
+  filter(chocolate==TRUE) %>% 
+  summarize(median(winpercent))
+
+# Among chocolate candies, how does the median winpercent compare if the candy is also peanutyalmondy?
+candy %>% 
+  filter(chocolate==TRUE) %>% 
+  group_by(peanutyalmondy) %>% 
+  summarize(median(winpercent))
+
+```
+    
+    

@@ -1,0 +1,111 @@
+# Pre-bootcamp homework
+This is my *first* Rmd document and it's **exciting**!
+```{r}
+52+49
+rep(10,6)
+rep(6,10)
+```
+```{r}
+spotify <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/spotify.csv")
+
+#matrix of 350 rows x 23 columns
+dim(spotify)
+
+#number of rows
+nrow(spotify)
+
+#shows the top 6 results + headers
+head(spotify)
+
+#shows names of header
+names(spotify)
+
+```
+```{r}
+library(ggplot2)
+```
+```{r}
+#Creates a blank bar chart with x coordinates being the genre
+ggplot(spotify,aes(x=genre))
+```
+```{r}
+#Creates a bar chart that counts the number of songs in a genre. geom_bar means bar chart.
+ggplot(spotify,aes(x=genre))+geom_bar()
+```
+```{r}
+#Same bar chart as before, but names x as genre and y as number of songs
+ggplot(spotify,aes(x=genre))+geom_bar()+labs(x="genre",y="number of songs")
+```
+The genre categories are edm, latin, pop, r&b, rap, and rock. The most popular is r&b and the least popular is tied between rock and latin.
+```{r}
+#Blank chart
+ggplot(spotify,aes(x=danceability))
+```
+```{r}
+#Histogram counting danceability
+ggplot(spotify,aes(x=danceability))+geom_histogram()
+```
+```{r}
+#Adds white lines between the bars to make it more readable, and adds number of songs label
+ggplot(spotify, aes(x = danceability)) +
+  geom_histogram(color = "white",fill="red") +
+  labs(x = "Song danceability", y = "Number of songs",title="My histogram")+xlim(0,100)
+```
+```{r}
+#Width of bins are very small with
+ggplot(spotify, aes(x = danceability)) +
+  geom_histogram(color = "white", binwidth = 0.5)
+```
+```{r}
+#Bins are very large, making the graph not very useful
+ggplot(spotify, aes(x = danceability)) +
+  geom_histogram(color = "white", binwidth = 40)
+```
+Typical danceability rating is around 65, with a large number of songs being rated 75. Danceability rating has a medium-large variance, and it might not be a normal distribution. There are some outliers, such as dance ratings at 15. About 110 songs have a rating between 20 and 60.
+```{r}
+#Blank plot
+ggplot(spotify, aes(x = danceability))
+```
+```{r}
+#Density plot, shows a smooth-curved version of the histogram.
+ggplot(spotify, aes(x = danceability)) +
+  geom_density()
+```
+```{r}
+ggplot(spotify,aes(x=danceability))+geom_boxplot()
+```
+Histograms are useful for being able to count the value of x. Density plots are useful for seeing the distribution of the data. Box plots are useful for seeing the mean, median, and other similar values, as well as outliers.
+
+The histogram using default bin size with color white bars between them had the best visibility. Small width can be more accurate but hard to read, and large width is very inaccurate.
+
+ggplot requires to first know what dataset to refer to, then aes can set the x-axis. We use the "+" to determine what to do with the selected data, such as creating a histogram. In general, the second row is where we determine what plot type to use.
+```{r}
+library(dplyr)
+```
+```{r}
+# Calculate the mean
+spotify %>% 
+  summarize(mean(danceability))
+
+# Your turn: calculate the median
+spotify%>%
+  summarize(median(danceability))
+
+# Your turn: we can also calculate the mean and median at one time!
+spotify %>% 
+  summarize(mean(danceability), median(danceability))
+```
+```{r}
+# Calculate the variance in danceability using "var"
+spotify %>% summarize(var(danceability))
+
+# Your turn: calculate the standard deviation using "sd"
+spotify %>%
+  summarize(sd(danceability))
+
+# Your turn: calculate the 2.5th and 97.5th percentiles
+# (this gives us a range of the middle 95%)
+spotify %>% 
+  summarize(quantile(danceability, 0.025), quantile(danceability, 0.975))
+```
+

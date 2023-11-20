@@ -1,0 +1,1232 @@
+---
+title: "Sampling distributions & confidence intervals"
+output:
+  rmarkdown::html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+---
+
+NOTE: You won't be able to knit this Rmd until you've completed the chunks.
+
+
+
+\
+
+
+## Review + a new goal 
+
+Let's load the `penguins` data from Homework 1, along with some handy packages:
+
+```{r warning = FALSE, message = FALSE}
+# Our usual packages for visualization, wrangling, & modeling
+library(ggplot2)
+library(dplyr)
+library(tidymodels)
+library(gridExtra)
+
+# More packages we'll use to load data and do inference
+library(infer)
+library(broom)
+library(gsheet)
+
+# Set a more color-blind friendly palette for ggplot
+palette(c("#000000", "#56B4E9", "#E69F00", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7"))
+scale_colour_discrete <- function(...) scale_colour_manual(values = palette())
+scale_fill_discrete <- function(...) scale_fill_manual(values = palette())
+
+# Load the data
+library(palmerpenguins)
+data(penguins)
+```
+
+Our goal is to model a penguin's `bill_length_mm` by its `species` and `flipper_length_mm`.
+
+```{r}
+# Warming up: present the average bill length by species, in cm, from smallest to biggest
+# NOTE: 1cm = 10mm
+head(penguins)
+
+penguins %>% 
+  mutate(bill_length_cm=bill_length_mm/10) %>% 
+  group_by(species) %>% 
+  summarize(mean(bill_length_cm))
+
+```
+
+```{r}
+# Plot the relationship of bill_length_mm with species and flipper_length_mm
+ggplot(penguins,aes(x=species,y=flipper_length_mm))+
+  geom_boxplot()
+
+```
+
+```{r}
+# Model the relationship
+
+# Step 1: Set up modeling method
+lm_spec <- linear_reg() %>%
+  set_mode("regression") %>% 
+  set_engine("lm")
+
+# Define our model as bill_length_mm with species and flipper_length_mm
+penguin_model <- lm_spec %>% 
+  fit(bill_length_mm ~ species + flipper_length_mm, data = penguins)
+
+# Check it out
+penguin_model
+```
+
+```{r}
+# Evaluate the model: is it strong?
+penguin_model %>% 
+  glance()
+```
+The r-squared is 0.78, so it could potentially be a strong model.
+```{r}
+# Evaluate the model: how accurate are its predictions?
+#The MAE seems low, so I think it's accurate.
+
+# Build & evaluate the model on 10 training sets.
+set.seed(2000)
+penguin_cv <- lm_spec %>% 
+  fit_resamples(
+    bill_length_mm ~ species + flipper_length_mm,     resamples = vfold_cv(penguins, v = 10), 
+    metrics = metric_set(mae)
+  )
+
+# Get the CV MAE
+penguin_cv %>% 
+  collect_metrics()
+```
+
+```{r}
+# Get the MAE for each test fold
+penguin_cv %>% 
+  unnest(.metrics)
+```
+
+
+```{r}
+# Evaluate the model: is it wrong?
+penguin_model %>% 
+  augment(new_data = penguins) %>% 
+  ggplot(aes(x = .pred, y = .resid)) + 
+    geom_point() + 
+    geom_hline(yintercept = 0)
+#The model looks reasonable
+```
+
+\
+\
+\
+\
+
+
+
+**Next up**
+
+Our above visualizations, models, etc allow us to answer **exploratory questions** about our sample. Next, we'll start asking **inferential questions**: when accounting for the potential *error* in our sample estimates, what does our sample data tell us about the larger population of interest?
+
+
+
+\
+\
+\
+\
+
+
+# Simulation study: sampling variability 
+
+
+[Github user Tony McGovern](https://github.com/tonmcg/US_County_Level_Election_Results_08-20) has compiled the 2012, 2016, and 2020 presidential election results for the **population of all 3000+ U.S. counties (except Alaska)**. (Image: [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Map_of_USA_with_county_outlines_(black_%26_white).png)) 
+
+![](https://upload.wikimedia.org/wikipedia/commons/6/68/Map_of_USA_with_county_outlines_%28black_%26_white%29.png)
+
+
+Import the combined and slightly wrangled data:
+
+```{r}
+# Import & wrangle data
+elections <- read.csv("https://raw.githubusercontent.com/ajohns24/data/main/election_2020.csv") %>% 
+  mutate(rep_20 = 100*per_gop_2020,
+         rep_12 = 100*per_gop_2012) %>% 
+  dplyr::select(state_name, state_abbr, county_name, county_fips,
+         rep_20, rep_12)
+```
+
+The Republican ("rep") candidate for president was Donald Trump in 2020 and Mitt Romney in 2012. Our goal will be to understand how Trump's 2020 vote percentage (`rep_20`) relates to Romney's 2012 vote percentage (`rep_12`). Specifically, we have **complete population (census) data** on Trump's vote percentage in each county outside Alaska. Thus, we know that the relationship trend between Trump's 2020 support and Romney's 2012 support is as follows: 
+
+`rep_20` = 5.179 + 1.000`rep_12`
+
+
+```{r}
+# Model rep_20 by rep_12
+population_mod <- lm_spec %>% 
+  fit(rep_20 ~ rep_12, data = elections)
+population_mod
+
+# Visualize the model
+ggplot(elections, aes(x = rep_12, y = rep_20)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+
+\
+\
+
+
+
+
+
+
+## Different samples, different estimates
+
+\
+
+
+**FORGET THAT YOU KNOW ALL OF THE ABOVE.**    
+
+Let's **pretend** that we're working within the typical scenario - we don't have access to the entire population of interest. Instead, we need to **estimate** population relationship using data from a randomly selected **sample** of counties.
+
+\
+\
+
+
+
+**GOAL**
+
+Using a class experiment, explore the degree to which the sample data we happen to collect can impact our estimates and conclusions.
+
+
+\
+\
+
+
+## Exercise 1: Sampling and randomness in RStudio    
+
+We'll be taking some *random samples* of counties throughout this activity. The underlying *random number generator* plays a role in the random sample we happen to get:    
+
+
+```{r}
+# Try the following chunk A FEW TIMES
+sample_n(elections, size = 2, replace = FALSE)
+```
+
+```{r}
+# Try the following chunk A FEW TIMES
+set.seed(155)
+sample_n(elections, size = 2, replace = FALSE)
+```
+    
+
+**NOTE:**  If we `set.seed(some positive integer)` before taking a random sample, we'll get the same results.  This **reproducibility** is important:    
+    
+- we get the same results every time we knit the Rmd    
+- we can share our work with others and ensure they get our same answers    
+- it would not be great if you submitted your work to, say, a journal, and weren't able to back up / confirm / reproduce your results!    
+
+
+
+\
+\
+
+
+
+
+## Exercise 2: Class experiment
+
+Let's each take a sample of 10 counties and see what we get.    
+
+```{r}
+# Set your seed to the last 4 digits of your phone number
+set.seed(1585)
+
+# Take a sample
+my_sample <- sample_n(elections, size = 10, replace = FALSE)
+my_sample
+```
+    
+Construct and plot a model using your sample data. How close is your sample **estimate** to the actual population model in red?
+
+```{r}
+# Build the sample model
+my_model <- lm_spec %>% 
+  fit(rep_20 ~ rep_12, data = my_sample)
+my_model
+```
+
+```{r}
+# Plot the sample data and sample model (blue)
+# How does this compare to the population model (red)?
+ggplot(my_sample, aes(y = rep_20, x = rep_12)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE) + 
+  geom_abline(intercept = 5.179, slope = 1, color = "red")
+```
+My model (blue) is very close to the actual population (red).    
+    
+
+\
+\
+
+
+
+
+## Exercise 3: Report your results
+
+Indicate your sample intercept and slope *estimates* in [this survey](https://docs.google.com/forms/d/e/1FAIpQLScS9dTy4sOU2ff7iG0DEowjmXpkYQWli6lJmNVz-p2bAFrkWQ/viewform?usp=sf_link).   
+
+
+
+
+\
+\
+
+
+
+## Exercise 4: Comparing estimates
+
+Import each student's estimates from Google sheets:    
+
+```{r}
+library(gsheet)
+results <- gsheet2tbl('https://docs.google.com/spreadsheets/d/1v2k5EPuVb1FC0tDSqvzibgDhZWkgHZJiI2l1_erccec/edit?usp=sharing')
+```
+    
+Compare the intercepts to each other and to the _true_ population intercept in red:
+
+```{r}
+ggplot(results, aes(x = intercept)) + 
+  geom_histogram(color = "white") + 
+  geom_vline(xintercept = 5.179, color = "red")
+#Most intercepts are relatively close, but there are a few outliers.
+```
+
+Compare the slopes to each other and to the _true_ population slope in red:
+
+```{r}
+ggplot(results, aes(x = slope)) + 
+  geom_histogram(color = "white") + 
+  geom_vline(xintercept = 1.000, color = "red")
+#Once again, most results are relatively close to the actual slope, but there are some outliers.
+```
+
+Compare the resulting models to the *true* population model in red:
+
+```{r}
+ggplot(elections, aes(x = rep_12, y = rep_20)) +
+  geom_abline(data = results, aes(intercept = intercept, slope = slope), color = "gray") + 
+  geom_smooth(method = "lm", color = "red", se = FALSE)
+#Most lines appear to be pretty close, but one of them is far skewed
+```
+
+
+
+\
+\
+
+
+
+
+
+## Simulation study
+
+
+**GOAL**
+
+Our little experiment reflects very few of the more than $_{3112}C_{10} > 2.3*10^{28}$ different samples of 10 counties that we could get from the entire population of 3112 counties!!  In this section, you'll run a *simulation* to study just how different these estimates could be.    
+
+
+\
+\
+
+
+**DIRECTIONS**
+
+In your breakout rooms:
+
+- Introduce yourselves. What is a recent TV show or movie or music you've watched / listened to? Would you recommend it?
+
+- Work on exercises 5--14 (which will remind you to check in with me).
+
+- Somebody please share your screen.
+
+
+
+
+## Exercise 5: Taking multiple samples
+
+Recall that we can take a sample of, say, 10 counties using `sample_n()`:
+
+```{r}
+# Run this chunk a few times to see the different samples you get
+elections %>% 
+  sample_n(size = 10, replace = FALSE)
+```
+
+We can also take a sample of 10 counties and then use the data to build a model:
+
+```{r}
+# Run this chunk a few times to see the different sample models you get
+elections %>% 
+  sample_n(size = 10, replace = FALSE) %>% 
+  with(lm(rep_20 ~ rep_12))
+```
+
+But to better understand how our sample estimates can vary from sample to sample, we want to take multiple unique samples and build a sample model from each. We don't have to do this one by one by one! We can use the handy `do()` function in the `mosaic` package. For example, the code below does the following 2 separate times: (1) take a sample of size 10; and then (2) use the sample to build a model. Check out the details!
+
+```{r}
+# Run this chunk a few times to see the different sets of sample models you get
+library(mosaic)
+mosaic::do(2)*(
+  elections %>% 
+    sample_n(size = 10, replace = FALSE) %>% 
+    with(lm(rep_20 ~ rep_12))
+)
+```
+
+
+\
+\
+
+
+
+## Exercise 6: 500 samples of size 10
+
+To get a sense for the wide variety of samples we might get, take **500** samples of size n = **10**.
+    
+```{r}
+set.seed(155)
+models_10 <- mosaic::do(500)*(
+  elections %>% 
+    sample_n(size = 10, replace = FALSE) %>% 
+    with(lm(rep_20 ~ rep_12))
+)
+```    
+
+Check it out. Convince yourself that we've built and stored 500 sample models:
+
+```{r}
+# Check it out
+head(models_10)
+dim(models_10)
+```
+
+Plot these **500** sample model estimates on the same frame.
+
+```{r}    
+ggplot(elections, aes(x = rep_12, y = rep_20)) + 
+  geom_smooth(method = "lm", se = FALSE) +
+  geom_abline(data = models_10, 
+              aes(intercept = Intercept, slope = rep_12), 
+              color = "gray", size = 0.25) 
+```
+
+
+
+\
+\
+
+
+
+
+## Exercise 7: 500 sample slopes
+
+Let's focus on the slopes of these 500 sample models. Construct a histogram of the 500 sample estimates of the `rep_12` coefficient (slope). This histogram approximates a **sampling distribution** of the sample slopes. Describe the sampling distribution: What's its general shape? Where is it centered? Roughly what's its spread / i.e. what's the range of estimates you observed?
+
+```{r}
+ggplot(models_10, aes(x = rep_12)) + 
+  geom_histogram(color = "white") + 
+  xlim(0.2, 1.8)
+```
+
+The middle is a little less than 1.0, and the slopes appear to have a normal distribution (bell-curved).
+ 
+ 
+ 
+\
+\
+
+
+
+## Exercise 8: Increasing sample size
+
+Suppose we increased our sample size from `n = 10` to `n = 50`.  What impact do you anticipate this having on the sampling distribution of sample slopes:          
+
+- Around what value would you expect the distribution of sample slopes to be centered?  
+I think it would still be centered around 1.0.
+
+- What general shape would you expect the distribution to have?    
+I think it would have a stronger normal distribution.
+
+- In comparison to estimates based on the samples of size 10, do you think the estimates based on samples of size 50 will be closer to or farther from the true slope (on average)?  Why?    
+I think it will be closer since it will be more accurate.    
+
+
+\
+\
+
+
+
+## Exercise 9: 500 samples of size 50
+
+Test your intuition. Fill in the blanks to repeat the simulation process with samples of size n = 50.    
+
+```{r}
+# Take 500 samples of size n = 50
+# And build a sample model from each
+set.seed(155)
+models_50 <- mosaic::do(500)*(
+  elections %>% 
+    sample_n(size = 50, replace = FALSE) %>% 
+    with(lm(rep_20 ~ rep_12))
+)
+```
+
+```{r}
+# Plot the 500 sample model estimates
+ggplot(elections, aes(x = rep_12, y = rep_20)) + 
+  geom_smooth(method = "lm", se = FALSE) + 
+  geom_abline(data = models_50, aes(intercept = Intercept, slope = rep_12), color = "gray", size = 0.25)
+```
+
+```{r}
+# Construct a histogram of the 500 rep_12 slope estimates    
+ggplot(models_50, aes(x = rep_12)) + 
+  geom_histogram(color = "white") + 
+  xlim(0.2, 1.8)
+``` 
+
+
+\
+\
+
+
+
+## Exercise 10: 500 samples of size 200
+
+Finally, repeat the simulation process with samples of size n = 200. Use `set.seed(155)` and the same naming conventions (eg: `samples_200` and `slopes_200`).    
+
+```{r}
+set.seed(155)
+models_200 <- mosaic::do(500)*(
+  elections %>% 
+    sample_n(size = 200, replace = FALSE) %>% 
+    with(lm(rep_20 ~ rep_12))
+)
+  
+# Plot the 500 sample model estimates
+ggplot(elections, aes(x = rep_12, y = rep_20)) + 
+  geom_smooth(method = "lm", se = FALSE) + 
+  geom_abline(data = models_200, aes(intercept = Intercept, slope = rep_12), color = "gray", size = 0.25)
+
+# Construct a histogram of the 500 rep_12 slope estimates    
+ggplot(models_50, aes(x = rep_12)) + 
+  geom_histogram(color = "white") + 
+  xlim(0.2, 1.8)
+```
+
+
+
+\
+\
+
+
+
+## Exercise 11: Impact of sample size -- part 1
+
+Compare and contrast the 500 sets of sample models when using samples of size 10, 50, and 200.
+
+```{r}
+# Samples of size 10
+ggplot(elections, aes(x = rep_12, y = rep_20)) + 
+  geom_smooth(method = "lm", se = FALSE) + 
+  geom_abline(data = models_10, aes(intercept = Intercept, slope = rep_12), color = "gray", size = 0.25)
+```
+
+```{r}
+# Samples of size 50
+ggplot(elections, aes(x = rep_12, y = rep_20)) + 
+  geom_smooth(method = "lm", se = FALSE) + 
+  geom_abline(data = models_50, aes(intercept = Intercept, slope = rep_12), color = "gray", size = 0.25)
+```
+
+```{r}
+# Samples of size 200
+ggplot(elections, aes(x = rep_12, y = rep_20)) + 
+  geom_smooth(method = "lm", se = FALSE) + 
+  geom_abline(data = models_200, aes(intercept = Intercept, slope = rep_12), color = "gray", size = 0.25)
+```
+
+
+\
+\
+
+
+
+## Exercise 12: Impact of sample size: Part 2
+
+### Part a
+
+Compare the sampling distributions of the sample slopes for the estimates based on sizes 10, 50, and 200 by plotting them on the same frame:
+
+```{r}
+# Combine the estimates & sample size into a new data set
+simulation_data <- data.frame(
+  estimates = c(models_10$rep_12, models_50$rep_12, models_200$rep_12), 
+  sample_size = rep(c("10","50","200"), each = 500))
+
+# Construct density plot
+ggplot(simulation_data, aes(x = estimates, color = sample_size)) + 
+  geom_density() + 
+  labs(title = "SAMPLING Distributions")
+```
+
+
+
+
+### Part b
+
+Calculate and compare the mean and standard deviation in sample slopes calculated from samples of size 10, 50, and 200.
+
+```{r}
+simulation_data %>% 
+  group_by(sample_size) %>% 
+  summarize(mean(estimates), sd(estimates))
+```
+
+
+
+### Part c
+
+Recall: The standard deviation of sample estimates is called a **standard error**. It measures the typical distance of a sample estimate from the actual population value. Interpret and compare the three standard errors. For example, when using samples of size 10, how far is the typical sample slope from the actual population slope it's estimating? What about when using samples of size 200?
+
+The std error for 10 vs 50 is over double, and 7x for 10 vs 200. The std error for 50 vs 200 is almost double. In other words, the std error for 200 is significantly less than 10, but marginally less than 50.
+
+
+\
+\
+
+
+
+## Exercise 13: Properties of sampling distributions
+
+In light of your these investigations, complete the following statements.   
+
+
+### Part a
+
+For all sample sizes, the shape of the sampling distribution is ???.  
+
+Normal
+
+### Part b
+
+As sample size increases:    
+
+- The average sample slope estimate INCREASES / DECREASES / IS FAIRLY STABLE.    
+- The standard deviation of the sample slopes INCREASES / DECREASES / IS FAIRLY STABLE.   
+
+1. Fairly stable.
+2. Decreases
+    
+### Part c
+
+Thus, as sample size increases, our sample slopes become MORE RELIABLE / LESS RELIABLE. 
+
+More reliable.
+
+\
+\
+
+
+
+## Exercise 14
+
+Check in with Alicia and then take a break!
+
+
+
+\
+\
+
+
+
+## Reflection
+
+Consider a simple population model
+
+$$y = \beta_0 + \beta_1 x$$    
+
+Our sample data give us an **estimate** of this model:
+
+$$y = \hat{\beta}_0 + \hat{\beta}_1 x$$    
+
+where    
+
+- our estimates $\hat{\beta}_0$ and $\hat{\beta}_1$ will vary depending upon what data we happen to get   
+- there is error in these estimates    
+
+These concepts are captured in the **sampling distribution** of a sample estimate $\hat{\beta}$ (eg: $\hat{\beta}_0$ or $\hat{\beta_1}$).
+The sampling distribution of $\hat{\beta}$ is a distribution of all possible $\hat{\beta}$ we could observe based on all possible samples of the same size $n$ from the population.
+It captures how $\hat{\beta}$ can vary from sample to sample.    
+
+
+\
+\
+
+
+**Impact of sample size on a sampling distribution**    
+
+As sample size n increases:  
+
+- there is less variability in the possible estimates from different samples 
+- we are less likely to get estimates that are far from the truth    
+
+
+\
+\
+
+
+**Standard error of $\hat{\beta}$**    
+
+The standard deviation of the sampling distribution, i.e. the **standard error**, measures the typical error in the sample slopes calculated from sample to sample.
+The greater the standard error, the less "reliable" the sample estimate.
+We can calculate standard errors as follows:
+
+$$\begin{array}{ll}
+\text{population model}: & y = X \beta + \varepsilon \;\; \text{ where } \;\; \varepsilon \sim N(0, \sigma^2) \\
+\text{sample estimate of $\beta$}: & \hat{\beta} = \left(X^TX\right)^{-1}X^Ty \\
+\text{standard error of $\hat{\beta}$}: & s.e.\left(\hat{\beta}\right) = \sqrt{\sigma^2\left(X^TX\right)^{-1}} \propto \frac{\sigma}{\sqrt{n}} \\
+\end{array}$$
+
+
+
+
+
+
+\
+\
+\
+\
+
+
+
+
+**THE CENTRAL LIMIT THEOREM**    
+
+**IF** the regression model assumptions are met and our sample size $n$ is "big enough", then the **Central Limit Theorem (CLT)** guarantees that the sampling distribution of *all* possible $\hat{\beta}_i$ we could observe from *all* possible samples of size $n$ is approximately Normally distributed around $\beta_i$ with standard error $s.e.(\hat{\beta}_i)$:
+
+$$\hat{\beta}_i \stackrel{\cdot}{\sim} N(\beta_i, s.e.(\hat{\beta}_i))$$
+
+
+
+Connecting this to the 68-95-99.7 Rule, the CLT guarantees that (approximately)...
+
+- **68%** of samples will produce $\hat{\beta}_i$ within **1 st. err.** of $\beta_i$    
+
+- **95%** of samples will produce $\hat{\beta}_i$ within **2 st. err.** of $\beta_i$
+
+- **99.7%** of samples will produce $\hat{\beta}_i$ within **3 st. err.** of $\beta_i$
+
+
+\
+
+```{r echo = FALSE, fig.width = 8, fig.height = 3, fig.align = "center"}
+library(ggplot2)
+g <- ggplot(data.frame(x=c(-4,4)),aes(x)) +
+    stat_function(fun = dnorm) + 
+    geom_segment(aes(x = 0, xend = 0, y = 0, yend = dnorm(0)), linetype = 2) + 
+    theme(axis.ticks = element_blank(),
+          axis.text = element_blank()) + 
+    labs(y="", x=expression(beta[i]))
+d <- ggplot_build(g)$data[[1]]
+
+g1 <- g + 
+    geom_area(data = subset(d, x > -1 & x < 1), aes(x=x, y=y), fill="red", alpha = 0.6) + 
+    labs(title = "68% of estimates")
+g2 <- g + 
+    geom_area(data = subset(d, x > -2 & x < 2), aes(x=x, y=y), fill="red", alpha = 0.6) + 
+    labs(title = "95% of estimates")
+g3 <- g + 
+    geom_area(data = subset(d, x > -3 & x < 3), aes(x=x, y=y), fill="red", alpha = 0.6) + 
+    labs(title = "99.7% of estimates")
+grid.arrange(g1,g2,g3,ncol=3)
+    
+```
+
+\
+
+
+**NOTE:** See this [video](https://www.youtube.com/watch?v=jvoxEYmQHNM) for the CLT explained using bunnies.
+
+
+
+\
+\
+\
+\
+\
+\
+\
+\
+
+
+
+
+# Reporting estimates with measures of error    
+
+
+**GOAL**    
+
+When interpreting and reporting our estimated sample model, it's crucial to incorporate a measure of the potential error in these estimates. This is commonly done using **standard errors** & **confidence intervals**. 
+
+We see confidence intervals reported in everyday news. For example, in June, 2022, a Reuters-Ipsos poll reported that Biden's approval rating is at 39 percent with a margin of sampling error of 4 percentage points. Thus a confidence interval for his approval rating is
+
+$39 \pm 4 = (35, 43)$
+
+
+
+
+
+
+\
+\
+
+
+
+## Exercise 15: Estimating the standard error
+
+Now, let's see how we can obtain and communicate such measurements of error for our linear regression models. Suppose we observe data on **ONE** sample of 50 counties:
+
+
+```{r}
+# Sample 50 counties
+set.seed(34)
+sample_50 <- sample_n(elections, size = 50, replace = FALSE)
+```    
+
+Calculate a sample model estimate using `sample_50`: 
+    
+```{r}
+sample_mod <- lm_spec %>% 
+  fit(rep_20 ~ rep_12, data = sample_50)
+```
+
+The `tidy()` function prints out the coefficient estimates for this model in addition to other information we'll use for inference:
+
+```{r}
+sample_mod %>% 
+  tidy()
+``` 
+
+
+### Part a
+
+Our sample estimate of slope $\beta_1$ is $\hat{\beta}_1 = 0.896$. Rounded to 3 decimal places, what is the reported standard error of this estimate? 
+0.052
+
+
+### Part b
+
+This standard error was *estimated* from our sample data. How does it compare to 0.068, the standard error we approximated via our sampling distribution simulation? NOTE: Since it takes into account more than just one sample, this simulation provides a better estimate of the actual error in 50 county samples. However, it's merely hypothetical -- remember that we only take 1 sample in practice.
+
+The standard error here is estimated to be lower than 0.068, but pretty close.
+
+### Part c
+
+Interpret the standard error. Does this seem big or small relative to the slope?
+
+It seems small relative to the slope. It's pretty close.
+    
+
+\
+
+
+
+## Exercise 16: Constructing confidence intervals
+
+In light of the standard error 0.052 that you reported above, the CLT for $\hat{\beta}_1$ guarantees that $$\hat{\beta}_1 \stackrel{\cdot}{\sim} N\left(\beta_1, 0.052^2\right)$$ where $\beta_1$ is the **"unknown"** population slope. Thus approximately 95% of samples will produce an estimate $\hat{\beta}_1$ that's within 2 standard errors of $\beta_1$. In turn, $\beta_1$ is within 2 standard errors of 95% of all possible $\hat{\beta}_1$.
+
+
+### Part a
+
+Calculate the range of values that are within 2 standard errors of OUR sample slope ($\hat{\beta}_1$ = 0.896):    
+
+$$\begin{split}
+\hat{\beta_1} \pm 2 s.e.(\hat{\beta}_1) & =  \hspace{2in}\\
+\end{split}$$    
+
+This is the **95% confidence interval (CI)** for $\beta_1$!  That is: though we don't know $\beta_1$ (pretend), we are "95% confident" that it falls within the range of this interval.    
+
+
+
+### Part b
+
+We can get a more accurate confidence interval in RStudio:    
+
+```{r}
+sample_mod %>% 
+  pluck("fit") %>% 
+  confint()
+```
+
+
+### Part c
+
+Use the confidence interval to evaluate the claim that $\beta_1 > 0$, i.e. that there's a positive association between 2020 and 2012 Republican support. 
+    
+barely. 1 is slightly above the CI    
+    
+    
+
+\
+\
+\
+\
+
+
+
+
+# Confidence interval simulation study
+
+\
+
+
+**GOAL**    
+
+We've constructed one CI based on one sample of data. To better understand the concept and how our CIs might differ depending upon what sample data we happen to get, let's do another simulation study.
+
+
+\
+\
+
+
+
+## Exercise 17
+
+As we saw in our simulation study of 500 samples, some samples are lucky and some aren't.  Is `sample_50` one of the lucky samples?  That is, did this sample produce a confidence interval that contains the true slope $\beta_1 = 1.000$?
+
+
+
+\
+
+\
+
+
+
+
+
+## Exercise 18: Writing functions
+
+In the exercises below, we'll play around with different CI dynamics (eg: changing up sample size and confidence level). Instead of re-doing our syntax under each new setting as we did for the sampling distribution simulation, let's streamline the process by writing a function.
+
+### Part a
+
+We can write our own functions in R! Pick through and run the following syntax. How does it work?    
+
+```{r}
+triangles <- function(a, b) {
+  side <- sqrt(a^2 + b^2)
+  return(side)
+}
+
+triangles(a = 2, b = 3)
+```
+
+
+
+### Part b
+
+Write a function named `prod_a_b_c` that returns the product of three numbers, where the user supplies the numbers. Test it by: `prod_a_b_c(a = 2, b = 3, c = 4)`.
+
+
+```{r}
+prod_a_b_c <- function(a,b,c) {
+  prod <- a*b*c
+  return(prod)
+}
+prod_a_b_c(a=2,b=3,c=4)
+```
+
+
+
+### Part c
+
+What do you think the function below will do?
+
+```{r}
+CI_plot <- function(level, n) {    
+  # Take 100 samples of size n, level is confidence
+  # Calculate confidence intervals from each sample
+  CIs <- mosaic::do(100)*(
+    elections %>% 
+      sample_n(size = n, replace = FALSE) %>%    
+      with(confint(lm(rep_20 ~ rep_12, data = .), level = level)) %>% 
+      as.data.frame() %>% 
+      tail(1)
+  )
+  CIs <- CIs %>% 
+    select(4, 1, 2)
+  names(CIs) <- c("sample", "lower", "upper")
+  CIs <- CIs %>% 
+    mutate(lucky = (lower < 1.000 & upper > 1.000),
+           estimate = (upper + lower) / 2) %>% 
+    select(1, 5, 2:4)
+  
+  ggplot(CIs, aes(y = sample, x = lower, color = lucky)) + 
+    geom_segment(aes(x = lower, xend = upper, y = sample, yend = sample)) + 
+    geom_point(aes(x = estimate, y = sample)) + 
+    lims(x = c(0.55, 1.45)) + 
+    geom_vline(xintercept = 1.000) +
+    scale_color_manual(values = c("red", "black")) + 
+    ggtitle(paste0("confidence = ", level*100, "%, n = ", n))
+}
+CI_plot(0.95,100)
+```
+
+
+
+\
+\
+
+
+
+## Exercise 19: 95% confidence
+
+The use of "95\% confidence" (instead of 100\% confidence) indicates that such unlucky samples are possible. But what exactly does "**95\% confidence**" mean? To answer this question, let’s repeat our experiment 100 times. Using the function below we can:    
+    
+- Take 100 different samples of 50 counties each.
+- From each sample, calculate a 95% CI for  
+$\beta_1$.
+- Then plot the 100 CIs. Each sample's interval is centered at its estimate $\hat{\beta}_1$, represented by a dot. Intervals that do NOT cover the true $\beta_1 = 1.000$ are highlighted in red.
+
+```{r}
+set.seed(1)
+CI_plot(level = 0.95, n = 50)
+```
+
+QUESTION: What percentage of your 100 intervals cover $\beta_1 = 1.000$? Not coincidentally, this should be close to 95%! 
+
+90%, 5 out of 50 don't cover it
+\
+\
+
+
+
+## Exercise 20: Impact of sample size
+
+Suppose we increase our sample size from 50 to 200 counties.
+
+
+### Part a
+
+What does your intuition say: will the confidence intervals for $\beta_1$ be narrower or wider?
+
+The confidence intervals will be narrower since we'll be more confident.
+
+### Part b
+
+Check your intuition. Simulate and plot 100 95% CIs for $\beta_1$, as calculated from samples of size 200.
+
+```{r}
+set.seed(1)
+CI_plot(level=0.95,n=200)
+```
+
+
+### Part c
+
+Roughly what percentage of these cover $\beta_1$?
+
+92%
+
+
+\
+\
+
+
+
+## Exercise 21: Impact of confidence level
+
+Consider lowering our confidence level from 95% to 68% so that only 68% of samples would produce 68% CIs that cover $\beta_1$.
+
+### Part a
+
+Intuitively, if we're only 68% confident in a 68% CI, will it be narrower or wider than a 95% CI?
+
+They can be narrower since less beta_1's are required to hit 1.00
+
+### Part b
+
+If we calculate an approximate 95% CI for $\beta_1$ by $\hat{\beta}_1 \pm 2 \text{ standard errors}$, how would we calculate a 68% CI?
+
+A similar way, but using 0.68
+
+### Part c
+
+Check your intuition. Simulate and plot 100 68% CIs for $\beta_1$, based on samples of size 50. Compare these to your original 95% CIs for samples of size 50.
+
+```{r}
+CI_plot(level=0.68,n=50)
+```
+There's a lot more intervals that do not reach 1.
+
+
+### Part d
+
+What if we wanted to be VERY confident that our CI covered $\beta_1$? Plot and discuss 100 different 99.7% CIs for $\beta_1$, based on samples of size 50.
+
+```{r}
+set.seed(1)
+CI_plot(level=0.997,n=50)
+```
+
+
+
+### Part e
+
+Or if we wanted to be 100% confident?! Simulate and plot 100 different 100% CIs for $\beta_1$.
+
+```{r}
+set.seed(1)
+CI_plot(level=1,n=100)
+```
+
+    
+\
+\
+
+
+## Exercise 22: Trade-offs
+
+Summarize the trade-offs in increasing confidence levels:
+
+### Part a
+
+As confidence level increases, does the percent of CIs that cover $\beta_1$ increase, decrease, or stay the same?
+
+It increases
+
+### Part b
+
+As confidence level increases, does the width of a CI increase, decrease, or stay the same?
+
+Increases
+
+### Part c
+
+Why is a very wide CI less useful than a narrower CI?
+
+It means that we are being less accurate in order to have a higher confidence.
+
+### Part d
+
+Practitioners often use a 95% confidence level when reporting estimates with an accompanying measure of error. Comment on why you think this is.
+
+It seems to have the most useful results. We can have a 5% error without having incredibly wide confidence intervals.
+
+\
+\
+\
+\
+
+
+
+> **Interpreting CIs & Confidence Levels**    
+> 
+> 1. The easy (but vague) way:    
+>    We are ‘95\% confident’ that $\beta_1$ is between the lower & upper bounds of this CI.    
+> 
+> \
+>
+> 2. The correct way:    
+>    Using this CI method, approximately 95\% of all possible samples will produce 95\% CI’s that cover $\beta_1$. The other 5\% are based on unlucky samples that produce unusually low or high estimates $\hat{\beta}_1$.  Mathematically: $$P(\hat{\beta}_1 \in (\beta_1 \pm 2 s.e.(\hat{\beta}_1))) \approx 0.95$$    
+> 
+> 3. The **incorrect way**:    
+>     We **cannot** say that "there’s a 95\% chance that $\beta_1$ is in the 95\% CI." Technically, $\beta_1$ is either in the interval or it’s not, so the probability is simply 1 or 0.  Mathematically: $$P(\beta_1 \in (\hat{\beta}_1 \pm 2 s.e.(\hat{\beta}_1))) \in \{0,1\} $$  NOTE: This is a consequence of using *frequentist* methods.  There's a competing *Bayesian* philosophy which is outside the scope of this workshop.
+
+
+
+
+\
+\
+\
+\
+
+
+
+# Optional (to do after class): mapping!
+
+Visualizing the election results on an actual map can provide some intuition for our work. To make maps, load the following package. NOTE: You'll likely need to install this package first.
+
+```{r}
+library(socviz)
+```
+
+Now process the data to include mapping info (eg: latitude and longitude coordinates):
+
+```{r}
+mapping_data <- elections %>% 
+  rename(id = county_fips) %>% 
+  mutate(id = as.character(id)) %>% 
+  mutate(id = ifelse(nchar(id) == 4, paste0("0",id), id)) %>% 
+  left_join(county_map, elections, by = "id")
+```
+
+
+Now make some maps!
+
+```{r eval = FALSE}
+ggplot(mapping_data, aes(x = long, y = lat, fill = rep_20, group = group)) + 
+  coord_equal() + 
+  geom_polygon(color = NA)
+```
+
+```{r eval = FALSE}
+ggplot(mapping_data, aes(x = long, y = lat, fill = rep_20, group = group)) + 
+  coord_equal() + 
+  geom_polygon(color = NA) + 
+  scale_fill_gradientn(colours = c("blue", "purple", "red"))
+```
+
+
+
+```{r eval = FALSE}
+mn <- mapping_data %>% 
+  filter(state_name == "Minnesota")
+ggplot(mn, aes(x = long, y = lat, fill = rep_20, group = group)) + 
+  coord_equal() + 
+  geom_polygon(color = NA) + 
+  scale_fill_gradientn(colours = c("blue", "purple", "red"), values = scales::rescale(seq(0, 100, by = 10)))
+```
+
+
+\
+\
+
+
+**Play around!**    
+
+- Check out another state.
+- Plot the results of a different election.
+- Create a `rep_16` variable from the original data. Then define and map a new variable that looks at the difference between `rep_20` and `rep_16` (ie. how did Trump's support shift from 2016 to 2020?).
+- Practice some data wrangling:    
+    - What are the counties with the 6 lowest 2020 Trump support? The highest?
+    - Check out the results in your state, arranged in descending order.
+    - Calculate the median Trump support in each state, arranged in ascending order.
+
+
+
+\
+\
+\
+\
+
+
+
+
+
+
